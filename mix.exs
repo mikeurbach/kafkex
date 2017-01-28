@@ -14,7 +14,7 @@ defmodule Kafkex.Mixfile do
   #
   # Type "mix help compile.app" for more information
   def application do
-    [applications: [:logger],
+    [applications: [:connection, :logger],
      mod: {Kafkex, []}]
   end
 
@@ -28,6 +28,6 @@ defmodule Kafkex.Mixfile do
   #
   # Type "mix help deps" for more examples and options
   defp deps do
-    []
+    [{:connection, "~> 1.0.4"}]
   end
 end
