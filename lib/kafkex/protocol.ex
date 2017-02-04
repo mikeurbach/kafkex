@@ -53,10 +53,12 @@ defmodule Kafkex.Protocol do
     << length(items) :: 32, build_items(items) :: binary >>
   end
 
-  defp build_items([]), do: <<>>
-  defp build_items([item|items]) when is_binary(item) do
-    << byte_size(item) :: 16, item :: binary >> <> build_items(items)
-  end
+  def build_items([]), do: <<>>
+  def build_items([item|items]), do: build_item(item) <> build_items(items)
+
+  def build_item(item, size_bits \\ 16)
+  def build_item(item, size_bits) when is_binary(item), do: << byte_size(item) :: size(size_bits), item :: binary >>
+  def build_item(item, size_bits) when is_nil(item), do: << 0 :: size(size_bits) >>
 
   def parse_list(length, rest, builder), do: parse_list(length, rest, builder, [])
   def parse_list(0, rest, _, items), do: {items, rest}

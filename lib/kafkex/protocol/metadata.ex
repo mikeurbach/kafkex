@@ -7,12 +7,11 @@ defmodule Kafkex.Protocol.Metadata do
 
     defstruct topics: nil
 
-    def build(correlation_id, client_id) do
-      build_headers(@api_key, @api_version, correlation_id, client_id) <> << 0 :: 32 >>
-    end
-
-    def build(correlation_id, client_id, topics) when is_list(topics) do
-      build_headers(@api_key, @api_version, correlation_id, client_id) <> build_list(topics)
+    def build(correlation_id, client_id, options \\ []) do
+      case options |> Keyword.get(:topics) do
+        nil -> build_headers(@api_key, @api_version, correlation_id, client_id) <> << 0 :: 32 >>
+        topics when is_list(topics) -> build_headers(@api_key, @api_version, correlation_id, client_id) <> build_list(topics)
+      end
     end
   end
 
