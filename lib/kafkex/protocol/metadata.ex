@@ -19,17 +19,9 @@ defmodule Kafkex.Protocol.Metadata do
     defstruct brokers: [], topic_metadatas: []
 
     def parse({:ok, << correlation_id :: 32, brokers_length :: 32, rest :: binary >>}) do
-      {brokers, << topic_metadatas_length :: 32, rest :: binary >>} = parse_list(brokers_length, rest, &Kafkex.Protocol.Metadata.Broker.build/1)
+      {brokers, << topic_metadatas_length :: 32, rest :: binary >>} = parse_list(brokers_length, rest, &Kafkex.Protocol.Broker.build/1)
       {topic_metadatas, <<>>} = parse_list(topic_metadatas_length, rest, &Kafkex.Protocol.Metadata.TopicMetadata.build/1)
       {correlation_id, %Response{brokers: brokers, topic_metadatas: topic_metadatas}}
-    end
-  end
-
-  defmodule Broker do
-    defstruct node_id: 0, host: "", port: 0
-
-    def build(<< node_id :: 32, host_length :: 16, host :: size(host_length)-binary, port :: 32, rest :: binary>>) do
-      {%Broker{node_id: node_id, host: host, port: port}, rest}
     end
   end
 

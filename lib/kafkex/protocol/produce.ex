@@ -11,10 +11,9 @@ defmodule Kafkex.Protocol.Produce do
 
     defstruct acks: 0, timeout: 0, topic_data: []
 
-    def build(correlation_id, client_id, options \\ []) do
+    def build(correlation_id, client_id, [topic_data: topic_data] = options) do
       acks = options |> Keyword.get(:acks, @default_acks)
       timeout = options |> Keyword.get(:timeout, @default_timeout)
-      topic_data = options |> Keyword.get(:topic_data)
 
       build_headers(@api_key, @api_version, correlation_id, client_id) <> << acks :: 16 >> <> << timeout :: 32 >> <> << length(topic_data) :: 32 >> <> build_data(topic_data)
     end
