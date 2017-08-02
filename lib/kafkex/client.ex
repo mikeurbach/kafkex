@@ -31,6 +31,10 @@ defmodule Kafkex.Client do
     GenServer.call(__MODULE__, {:group_coordinator, group_id})
   end
 
+  def join_group(group_id, topic) do
+    GenServer.call(__MODULE__, {:join_group, group_id, topic})
+  end
+
   def metadata() do
     GenServer.call(__MODULE__, {:metadata})
   end
@@ -45,13 +49,21 @@ defmodule Kafkex.Client do
     {:reply, {:ok, response}, new_state}
   end
 
-  def handle_call({:group_coordinator, group_id}, _from, %{leaders: leaders} = state) do
+  def handle_call({:group_coordinator, group_id}, _from, state) do
+    {response, new_state} = fetch_group_coordinator(group_id, state)
+
+    {:reply, {:ok, response}, new_state}
+  end
+
+  def handle_call({:join_group, group_id, topic}, _from, state) do
     {response, new_state} =
-      leaders
-      |> Map.values
-      |> Stream.flat_map(&Map.values/1)
-      |> Enum.random
-      |> request_sync(Kafkex.Protocol.GroupCoordinator, state, group_id: group_id)
+      group_id
+      |> fetch_group_coordinator(state)
+
+    {response, new_state} =
+      response
+      |> (fn(%Kafkex.Protocol.GroupCoordinator.Response{broker: %Kafkex.Protocol.Broker{node_id: node_id}}) -> node_id end).()
+      |> request_sync(Kafkex.Protocol.JoinGroup, new_state, group_id: group_id, topic: topic)
 
     {:reply, {:ok, response}, new_state}
   end
@@ -64,12 +76,20 @@ defmodule Kafkex.Client do
     conn = connections |> Map.get(broker)
     correlation_id = (correlation_ids |> Map.get(broker)) + 1
 
-    :ok = Kafkex.Connection.send(conn, apply(String.to_existing_atom("#{module}.Request"), :build, [correlation_id, @client_id, options]))
-    {^correlation_id, response} = apply(String.to_existing_atom("#{module}.Response"), :parse, [Kafkex.Connection.recv(conn, 0, @socket_timeout_ms)])
+    :ok = Kafkex.Connection.send(conn, Module.concat(module, Request).build(correlation_id, @client_id, options))
+    {^correlation_id, response} = Module.concat(module, Response).parse(Kafkex.Connection.recv(conn, 0, @socket_timeout_ms))
 
     new_correlation_ids = correlation_ids |> Map.put(broker, correlation_id)
 
     {response, %{state | correlation_ids: new_correlation_ids}}
+  end
+
+  defp fetch_group_coordinator(group_id, %{leaders: leaders} = state) do
+    leaders
+    |> Map.values
+    |> Stream.flat_map(&Map.values/1)
+    |> Enum.random
+    |> request_sync(Kafkex.Protocol.GroupCoordinator, state, group_id: group_id)
   end
 
   defp fetch_metadata([]), do: {:error, :no_seed_brokers}

@@ -1,6 +1,8 @@
 # Kafkex
 
-**TODO: Add description**
+## Background
+
+https://cwiki.apache.org/confluence/display/KAFKA/A+Guide+To+The+Kafka+Protocol
 
 ## Installation
 
@@ -10,7 +12,7 @@ If [available in Hex](https://hex.pm/docs/publish), the package can be installed
 
     ```elixir
     def deps do
-      [{:kafkex, "~> 0.1.0"}]
+      [{:kafkex, git: "https://github.com/mikeurbach/kafkex.git", tag: "0.1"}]
     end
     ```
 

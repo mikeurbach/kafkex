@@ -7,7 +7,7 @@ defmodule Kafkex.Protocol.GroupCoordinator do
 
     defstruct group_id: ""
 
-    def build(correlation_id, client_id, [group_id: group_id]) do
+    def build(correlation_id, client_id, group_id: group_id) do
       build_headers(@api_key, @api_version, correlation_id, client_id) <> build_item(group_id)
     end
   end
