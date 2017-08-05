@@ -4,7 +4,7 @@ defmodule Kafkex.Connection do
   require Logger
 
   @connect_options [:binary, active: false, packet: 4]
-  @connect_timeout 10_000
+  @connect_timeout 30_000
   @max_tries 5
 
   def start_link({host, port}) do

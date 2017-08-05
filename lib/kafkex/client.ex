@@ -4,7 +4,7 @@ defmodule Kafkex.Client do
   require Logger
 
   @client_id "kafkex"
-  @socket_timeout_ms 10_000
+  @socket_timeout_ms 30_000
 
   def start_link(seed_brokers) do
     GenServer.start_link(__MODULE__, seed_brokers, name: __MODULE__)
@@ -33,6 +33,10 @@ defmodule Kafkex.Client do
 
   def join_group(group_id, topic) do
     GenServer.call(__MODULE__, {:join_group, group_id, topic})
+  end
+
+  def sync_group(group_id, generation_id, member_id, group_assignment) do
+    GenServer.call(__MODULE__, {:sync_group, group_id, generation_id, member_id, group_assignment})
   end
 
   def metadata() do
@@ -68,6 +72,19 @@ defmodule Kafkex.Client do
     {:reply, {:ok, response}, new_state}
   end
 
+  def handle_call({:sync_group, group_id, generation_id, member_id, group_assignment}, _from, state) do
+    {response, new_state} =
+      group_id
+      |> fetch_group_coordinator(state)
+
+    {response, new_state} =
+      response
+      |> (fn(%Kafkex.Protocol.GroupCoordinator.Response{broker: %Kafkex.Protocol.Broker{node_id: node_id}}) -> node_id end).()
+      |> request_sync(Kafkex.Protocol.SyncGroup, new_state, group_id: group_id, generation_id: generation_id, member_id: member_id, group_assignment: group_assignment)
+
+    {:reply, {:ok, response}, new_state}
+  end
+
   def handle_call({:metadata}, _from, state) do
     {:reply, {:ok, state |> Map.take([:leaders])}, state}
   end
@@ -84,6 +101,7 @@ defmodule Kafkex.Client do
     {response, %{state | correlation_ids: new_correlation_ids}}
   end
 
+  # TODO: this could be cached
   defp fetch_group_coordinator(group_id, %{leaders: leaders} = state) do
     leaders
     |> Map.values
