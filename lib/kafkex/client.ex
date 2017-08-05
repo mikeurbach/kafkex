@@ -39,6 +39,10 @@ defmodule Kafkex.Client do
     GenServer.call(__MODULE__, {:sync_group, group_id, generation_id, member_id, group_assignment})
   end
 
+  def heartbeat(group_id, generation_id, member_id) do
+    GenServer.call(__MODULE__, {:heartbeat, group_id, generation_id, member_id})
+  end
+
   def metadata() do
     GenServer.call(__MODULE__, {:metadata})
   end
@@ -81,6 +85,19 @@ defmodule Kafkex.Client do
       response
       |> (fn(%Kafkex.Protocol.GroupCoordinator.Response{broker: %Kafkex.Protocol.Broker{node_id: node_id}}) -> node_id end).()
       |> request_sync(Kafkex.Protocol.SyncGroup, new_state, group_id: group_id, generation_id: generation_id, member_id: member_id, group_assignment: group_assignment)
+
+    {:reply, {:ok, response}, new_state}
+  end
+
+  def handle_call({:heartbeat, group_id, generation_id, member_id}, _from, state) do
+    {response, new_state} =
+      group_id
+      |> fetch_group_coordinator(state)
+
+    {response, new_state} =
+      response
+      |> (fn(%Kafkex.Protocol.GroupCoordinator.Response{broker: %Kafkex.Protocol.Broker{node_id: node_id}}) -> node_id end).()
+      |> request_sync(Kafkex.Protocol.Heartbeat, new_state, group_id: group_id, generation_id: generation_id, member_id: member_id)
 
     {:reply, {:ok, response}, new_state}
   end
