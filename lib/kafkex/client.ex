@@ -17,7 +17,7 @@ defmodule Kafkex.Client do
         leaders = build_leaders(metadata)
         correlation_ids = initialize_correlation_ids(connections)
 
-        {:ok, %{metadata: metadata, connections: connections, leaders: leaders, correlation_ids: correlation_ids}}
+        {:ok, %{metadata: metadata, connections: connections, leaders: leaders, correlation_ids: correlation_ids, group_coordinators: %{}}}
       {:error, _} = error ->
         {:stop, error}
     end
@@ -118,13 +118,21 @@ defmodule Kafkex.Client do
     {response, %{state | correlation_ids: new_correlation_ids}}
   end
 
-  # TODO: this could be cached
-  defp fetch_group_coordinator(group_id, %{leaders: leaders} = state) do
-    leaders
-    |> Map.values
-    |> Stream.flat_map(&Map.values/1)
-    |> Enum.random
-    |> request_sync(Kafkex.Protocol.GroupCoordinator, state, group_id: group_id)
+  defp fetch_group_coordinator(group_id, %{group_coordinators: group_coordinators, leaders: leaders} = state) do
+    case group_coordinators[group_id] do
+      nil ->
+        {response, new_state} = leaders
+        |> Map.values
+        |> Stream.flat_map(&Map.values/1)
+        |> Enum.random
+        |> request_sync(Kafkex.Protocol.GroupCoordinator, state, group_id: group_id)
+
+        new_group_coordinators = new_state[:group_coordinators] |> Map.put(group_id, response)
+
+        {response, %{new_state | group_coordinators: new_group_coordinators}}
+      response ->
+        {response, state}
+    end
   end
 
   defp fetch_metadata([]), do: {:error, :no_seed_brokers}
