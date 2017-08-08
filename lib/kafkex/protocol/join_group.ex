@@ -12,8 +12,7 @@ defmodule Kafkex.Protocol.JoinGroup do
 
     defstruct group_id: "", session_timeout: 0, member_id: "", protocol_type: "", group_protocols: []
 
-    def build(correlation_id, client_id, [group_id: group_id, topic: topic] = options) do
-      member_id = options |> Keyword.get(:member_id, "")
+    def build(correlation_id, client_id, [topic: topic, group_id: group_id, member_id: member_id] = options) do
       session_timeout = options |> Keyword.get(:session_timeout, @session_timeout)
       protocol_type = options |> Keyword.get(:protocol_type, @protocol_type)
       protocol_name = options |> Keyword.get(:protocol_name, @protocol_name)
@@ -28,9 +27,12 @@ defmodule Kafkex.Protocol.JoinGroup do
     defstruct generation_id: 0, group_protocol: "", leader_id: "", member_id: "", members: []
 
     def parse({:ok, << correlation_id :: 32, join_error_code :: 16, generation_id :: 32, group_protocol_length :: 16, group_protocol :: size(group_protocol_length)-binary, leader_id_length :: 16, leader_id :: size(leader_id_length)-binary, member_id_length :: 16, member_id :: size(member_id_length)-binary, members_length :: 32, rest :: binary >>}) do
-      :NONE = error_code(join_error_code)
-      {members, <<>>} = parse_list(members_length, rest, &Kafkex.Protocol.JoinGroup.Member.build/1)
-      {correlation_id, %Kafkex.Protocol.JoinGroup.Response{generation_id: generation_id, group_protocol: group_protocol, leader_id: leader_id, member_id: member_id, members: members}}
+      case error_code(join_error_code) do
+        :NONE ->
+          {members, <<>>} = parse_list(members_length, rest, &Kafkex.Protocol.JoinGroup.Member.build/1)
+          {correlation_id, {:ok, %Kafkex.Protocol.JoinGroup.Response{generation_id: generation_id, group_protocol: group_protocol, leader_id: leader_id, member_id: member_id, members: members}}}
+        error -> {correlation_id, {:error, error}}
+      end
     end
   end
 

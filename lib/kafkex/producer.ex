@@ -6,14 +6,15 @@ defmodule Kafkex.Producer do
   end
 
   def init(topic) do
-    {:ok, %{leaders: leaders}} = Kafkex.Client.metadata
+    {:ok, client} = Kafkex.Client.start_link([{'localhost', 9092}])
+    {:ok, %{leaders: leaders}} = Kafkex.Client.metadata(client)
     num_partitions = leaders |> Map.get(topic) |> Map.size
-    {:consumer, %{topic: topic, num_partitions: num_partitions, last_partition: -1}}
+    {:consumer, %{client: client, topic: topic, num_partitions: num_partitions, last_partition: -1}}
   end
 
-  def handle_events(events, _from, %{topic: topic, num_partitions: num_partitions, last_partition: last_partition} = state) do
+  def handle_events(events, _from, %{client: client, topic: topic, num_partitions: num_partitions, last_partition: last_partition} = state) do
     partition = next_partition(num_partitions, last_partition)
-    {:ok, _} = Kafkex.Client.produce(topic, partition, events)
+    {:ok, _} = Kafkex.Client.produce(client, topic, partition, events)
     {:noreply, [], %{state | last_partition: partition}}
   end
 

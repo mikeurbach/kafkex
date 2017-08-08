@@ -15,8 +15,8 @@ defmodule Kafkex.Connection do
     {:connect, :init, %{host: host, port: port, socket: nil, tries: 0}}
   end
 
-  def send(conn, data), do: Connection.call(conn, {:send, data})
-  def recv(conn, bytes, timeout), do: Connection.call(conn, {:recv, bytes, timeout})
+  def send(conn, data), do: Connection.call(conn, {:send, data}, @connect_timeout)
+  def recv(conn, bytes, timeout), do: Connection.call(conn, {:recv, bytes, timeout}, @connect_timeout)
   def close(conn), do: Connection.call(conn, :close)
 
   def connect(_, %{host: host, port: port, socket: nil, tries: tries} = state) do
@@ -35,11 +35,9 @@ defmodule Kafkex.Connection do
   end
 
   def disconnect(info, %{socket: socket} = state) do
-    :ok = :gen_tcp.close(socket)
-
     case info do
       {:close, from} ->
-        Connection.reply(from, :ok)
+        Connection.reply(from, :gen_tcp.close(socket))
       {:error, :closed} ->
         Logger.error("[#{__MODULE__}] connection closed")
       {:error, reason} ->

@@ -47,8 +47,10 @@ defmodule Kafkex.Protocol.SyncGroup do
     defstruct member_assignment: nil
 
     def parse({:ok, << correlation_id :: 32, sync_error_code :: 16, _member_assignment_size :: 32, member_assignment :: binary >>}) do
-      :NONE = error_code(sync_error_code)
-      {correlation_id, MemberAssignment.parse(member_assignment)}
+      case error_code(sync_error_code) do
+        :NONE -> {correlation_id, {:ok, MemberAssignment.parse(member_assignment)}}
+        error -> {correlation_id, {:error, error}}
+      end
     end
   end
 end

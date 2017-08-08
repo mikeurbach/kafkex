@@ -14,8 +14,7 @@ defmodule Kafkex.Protocol.Heartbeat do
 
   defmodule Response do
     def parse({:ok, << correlation_id :: 32, heartbeat_error_code :: 16 >>}) do
-      :NONE = error_code(heartbeat_error_code)
-      {correlation_id, nil}
+      {correlation_id, error_code(heartbeat_error_code)}
     end
   end
 end

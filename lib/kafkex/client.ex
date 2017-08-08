@@ -7,7 +7,7 @@ defmodule Kafkex.Client do
   @socket_timeout_ms 30_000
 
   def start_link(seed_brokers) do
-    GenServer.start_link(__MODULE__, seed_brokers, name: __MODULE__)
+    GenServer.start_link(__MODULE__, seed_brokers)
   end
 
   def init(seed_brokers) do
@@ -23,28 +23,28 @@ defmodule Kafkex.Client do
     end
   end
 
-  def produce(topic, partition, messages) do
-    GenServer.call(__MODULE__, {:produce, topic, partition, messages})
+  def produce(pid, topic, partition, messages) do
+    GenServer.call(pid, {:produce, topic, partition, messages}, @socket_timeout_ms)
   end
 
-  def group_coordinator(group_id) do
-    GenServer.call(__MODULE__, {:group_coordinator, group_id})
+  def group_coordinator(pid, group_id) do
+    GenServer.call(pid, {:group_coordinator, group_id}, @socket_timeout_ms)
   end
 
-  def join_group(group_id, topic) do
-    GenServer.call(__MODULE__, {:join_group, group_id, topic})
+  def join_group(pid, topic, group_id, member_id) do
+    GenServer.call(pid, {:join_group, topic, group_id, member_id}, @socket_timeout_ms)
   end
 
-  def sync_group(group_id, generation_id, member_id, group_assignment) do
-    GenServer.call(__MODULE__, {:sync_group, group_id, generation_id, member_id, group_assignment})
+  def sync_group(pid, group_id, generation_id, member_id, group_assignment) do
+    GenServer.call(pid, {:sync_group, group_id, generation_id, member_id, group_assignment}, @socket_timeout_ms)
   end
 
-  def heartbeat(group_id, generation_id, member_id) do
-    GenServer.call(__MODULE__, {:heartbeat, group_id, generation_id, member_id})
+  def heartbeat(pid, group_id, generation_id, member_id) do
+    GenServer.call(pid, {:heartbeat, group_id, generation_id, member_id}, @socket_timeout_ms)
   end
 
-  def metadata() do
-    GenServer.call(__MODULE__, {:metadata})
+  def metadata(pid) do
+    GenServer.call(pid, {:metadata}, @socket_timeout_ms)
   end
 
   def handle_call({:produce, topic, partition, messages}, _from, %{leaders: leaders} = state) do
@@ -63,7 +63,7 @@ defmodule Kafkex.Client do
     {:reply, {:ok, response}, new_state}
   end
 
-  def handle_call({:join_group, group_id, topic}, _from, state) do
+  def handle_call({:join_group, topic, group_id, member_id}, _from, state) do
     {response, new_state} =
       group_id
       |> fetch_group_coordinator(state)
@@ -71,7 +71,7 @@ defmodule Kafkex.Client do
     {response, new_state} =
       response
       |> (fn(%Kafkex.Protocol.GroupCoordinator.Response{broker: %Kafkex.Protocol.Broker{node_id: node_id}}) -> node_id end).()
-      |> request_sync(Kafkex.Protocol.JoinGroup, new_state, group_id: group_id, topic: topic)
+      |> request_sync(Kafkex.Protocol.JoinGroup, new_state, topic: topic, group_id: group_id, member_id: member_id)
 
     {:reply, {:ok, response}, new_state}
   end
