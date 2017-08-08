@@ -6,12 +6,12 @@ defmodule Kafkex.Consumer do
   @heartbeat_interval 1000
   @member_assignment_version 0
 
-  def start_link({topic, group_id}) do
-    GenServer.start_link(__MODULE__, {topic, group_id})
+  def start_link({seed_brokers, topic, group_id}) do
+    GenServer.start_link(__MODULE__, {seed_brokers, topic, group_id})
   end
 
-  def init({topic, group_id}) do
-    {:ok, client} = Kafkex.Client.start_link([{'localhost', 9092}])
+  def init({seed_brokers, topic, group_id}) do
+    {:ok, client} = Kafkex.Client.start_link(seed_brokers)
     join_group(client, topic, group_id, "")
   end
 

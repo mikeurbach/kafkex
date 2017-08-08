@@ -21,7 +21,7 @@ defmodule Kafkex.Protocol.Metadata do
     def parse({:ok, << correlation_id :: 32, brokers_length :: 32, rest :: binary >>}) do
       {brokers, << topic_metadatas_length :: 32, rest :: binary >>} = parse_list(brokers_length, rest, &Kafkex.Protocol.Broker.build/1)
       {topic_metadatas, <<>>} = parse_list(topic_metadatas_length, rest, &Kafkex.Protocol.Metadata.TopicMetadata.build/1)
-      {correlation_id, %Response{brokers: brokers, topic_metadatas: topic_metadatas}}
+      {correlation_id, {:ok, %Response{brokers: brokers, topic_metadatas: topic_metadatas}}}
     end
   end
 

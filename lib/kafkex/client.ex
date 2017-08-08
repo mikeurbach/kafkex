@@ -64,7 +64,7 @@ defmodule Kafkex.Client do
   end
 
   def handle_call({:join_group, topic, group_id, member_id}, _from, state) do
-    {response, new_state} =
+    {{:ok, response}, new_state} =
       group_id
       |> fetch_group_coordinator(state)
 
@@ -77,7 +77,7 @@ defmodule Kafkex.Client do
   end
 
   def handle_call({:sync_group, group_id, generation_id, member_id, group_assignment}, _from, state) do
-    {response, new_state} =
+    {{:ok, response}, new_state} =
       group_id
       |> fetch_group_coordinator(state)
 
@@ -90,7 +90,7 @@ defmodule Kafkex.Client do
   end
 
   def handle_call({:heartbeat, group_id, generation_id, member_id}, _from, state) do
-    {response, new_state} =
+    {{:ok, response}, new_state} =
       group_id
       |> fetch_group_coordinator(state)
 
@@ -133,7 +133,7 @@ defmodule Kafkex.Client do
       {:ok, conn} ->
         case Kafkex.Connection.send(conn, Kafkex.Protocol.Metadata.Request.build(0, @client_id)) do
           :ok ->
-            {0, metadata} = Kafkex.Protocol.Metadata.Response.parse(Kafkex.Connection.recv(conn, 0, @socket_timeout_ms))
+            {0, {:ok, metadata}} = Kafkex.Protocol.Metadata.Response.parse(Kafkex.Connection.recv(conn, 0, @socket_timeout_ms))
             :ok = Kafkex.Connection.close(conn)
             :ok = GenServer.stop(conn)
             {:ok, metadata}

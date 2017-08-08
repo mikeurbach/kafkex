@@ -1,12 +1,12 @@
 defmodule Kafkex.Producer do
   use GenStage
 
-  def start_link(topic) do
-    GenStage.start_link(__MODULE__, topic)
+  def start_link({seed_brokers, topic}) do
+    GenStage.start_link(__MODULE__, {seed_brokers, topic})
   end
 
-  def init(topic) do
-    {:ok, client} = Kafkex.Client.start_link([{'localhost', 9092}])
+  def init({seed_brokers, topic}) do
+    {:ok, client} = Kafkex.Client.start_link(seed_brokers)
     {:ok, %{leaders: leaders}} = Kafkex.Client.metadata(client)
     num_partitions = leaders |> Map.get(topic) |> Map.size
     {:consumer, %{client: client, topic: topic, num_partitions: num_partitions, last_partition: -1}}

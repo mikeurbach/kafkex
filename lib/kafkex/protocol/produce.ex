@@ -41,7 +41,7 @@ defmodule Kafkex.Protocol.Produce do
 
     def parse({:ok, << correlation_id :: 32, responses_length :: 32, rest :: binary>>}) do
       {responses, <<>>} = parse_list(responses_length, rest, &Kafkex.Protocol.Produce.TopicResponse.build/1)
-      {correlation_id, %Response{responses: responses}}
+      {correlation_id, {:ok, %Response{responses: responses}}}
     end
   end
 
