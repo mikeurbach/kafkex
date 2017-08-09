@@ -19,7 +19,7 @@ defmodule Kafkex.Protocol.JoinGroup do
       protocol_metadata_version = options |> Keyword.get(:protocol_metadata_version, @protocol_metadata_version)
       protocol_user_data = options |> Keyword.get(:protocol_user_data, @protocol_user_data)
 
-      build_headers(@api_key, @api_version, correlation_id, client_id) <> build_item(group_id) <> << session_timeout :: 32>> <> build_item(member_id) <> build_item(protocol_type) <> << 1 :: 32>> <> build_item(protocol_name) <> << protocol_metadata_version :: 32 >> <> build_list([topic]) <> build_item(protocol_user_data)
+      build_headers(@api_key, @api_version, correlation_id, client_id) <> build_item(group_id) <> << session_timeout :: 32>> <> build_item(member_id) <> build_item(protocol_type) <> << 1 :: 32>> <> build_item(protocol_name) <> << protocol_metadata_version :: 32 >> <> build_primitive_list([topic]) <> build_item(protocol_user_data)
     end
   end
 
