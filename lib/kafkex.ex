@@ -6,12 +6,9 @@ defmodule Kafkex do
   def start(_type, _args) do
     import Supervisor.Spec, warn: false
 
-    seed_brokers = Application.fetch_env!(:kafkex, :seed_brokers)
-
     # Define workers and child supervisors to be supervised
     children = [
       # Starts a worker by calling: Kafkex.Worker.start_link(arg1, arg2, arg3)
-      # worker(Kafkex.Client, [seed_brokers])
     ]
 
     # See http://elixir-lang.org/docs/stable/elixir/Supervisor.html

@@ -26,14 +26,14 @@ defmodule Kafkex.Protocol.Produce do
 
     defp build_messages([]), do: <<>>
     defp build_messages([{key,value}|rest]) do
-      core = << @magic_byte :: 8 >> <> << @attributes :: 8 >> <> << timestamp :: 64 >> <> build_item(key, 32) <> build_item(value, 32)
+      core = << @magic_byte :: 8 >> <> << @attributes :: 8 >> <> << timestamp() :: 64 >> <> build_item(key, 32) <> build_item(value, 32)
       crc = :erlang.crc32(core)
       message = << crc :: 32 >> <> core
       << 0 :: 64 >> <> << byte_size(message) :: 32 >> <> message <> build_messages(rest)
     end
     defp build_messages([value|rest]), do: build_messages([{nil,value}|rest])
 
-    defp timestamp, do: DateTime.utc_now |> DateTime.to_unix(:milliseconds)
+    defp timestamp(), do: DateTime.utc_now |> DateTime.to_unix(:milliseconds)
   end
 
   defmodule Response do

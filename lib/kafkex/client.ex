@@ -27,6 +27,10 @@ defmodule Kafkex.Client do
     GenServer.call(pid, {:produce, topic, partition, messages}, @socket_timeout_ms)
   end
 
+  def offsets(pid, topic_partitions) do
+    GenServer.call(pid, {:offsets, topic_partitions})
+  end
+
   def group_coordinator(pid, group_id) do
     GenServer.call(pid, {:group_coordinator, group_id}, @socket_timeout_ms)
   end
@@ -53,6 +57,21 @@ defmodule Kafkex.Client do
       |> Map.get(topic)
       |> Map.get(partition)
       |> request_sync(Kafkex.Protocol.Produce, state, topic_data: [[topic: topic, partition: partition, data: messages]])
+
+    {:reply, {:ok, response}, new_state}
+  end
+
+  def handle_call({:offsets, topic_partitions}, _from, %{leaders: leaders} = state) do
+    {responses, new_state} =
+      topic_partitions
+      |> leaders_for_topic_partitions(leaders)
+      |> request_for_brokers(Kafkex.Protocol.Offsets, state)
+
+    response_topic_partitions =
+      responses
+      |> Enum.flat_map(fn {:ok, %Kafkex.Protocol.Offsets.Response{topic_partitions: topic_partitions}} -> topic_partitions end)
+
+    response = %Kafkex.Protocol.Offsets.Response{topic_partitions: response_topic_partitions}
 
     {:reply, {:ok, response}, new_state}
   end
@@ -118,6 +137,18 @@ defmodule Kafkex.Client do
     {response, %{state | correlation_ids: new_correlation_ids}}
   end
 
+  defp request_for_brokers(brokers_with_options, module, state) do
+    brokers_with_options
+    |> Task.async_stream(fn {broker, options} ->
+      {broker, request_sync(broker, module, state, options)}
+    end)
+    |> Enum.reduce({[], state}, fn {:ok, {broker, {response, _new_state}}}, {responses, prev_state} ->
+      next_correlation_id = prev_state[:correlation_ids][broker] + 1
+      new_correlation_ids = %{prev_state[:correlation_ids] | broker => next_correlation_id}
+      {[response] ++ responses, %{prev_state | correlation_ids: new_correlation_ids}}
+    end)
+  end
+
   defp fetch_group_coordinator(group_id, %{group_coordinators: group_coordinators, leaders: leaders} = state) do
     case group_coordinators[group_id] do
       nil ->
@@ -153,7 +184,7 @@ defmodule Kafkex.Client do
 
   defp build_connections(%Kafkex.Protocol.Metadata.Response{brokers: brokers}) do
     Enum.reduce brokers, %{}, fn(%Kafkex.Protocol.Broker{node_id: node_id, host: host, port: port}, acc) ->
-      {:ok, conn} = connect({String.to_char_list(host), port})
+      {:ok, conn} = connect({String.to_charlist(host), port})
       acc |> Map.put(node_id, conn)
     end
   end
@@ -173,6 +204,17 @@ defmodule Kafkex.Client do
     |> Map.keys
     |> Enum.reduce(%{}, fn(broker_id, correlation_ids) ->
       correlation_ids |> Map.put(broker_id, 0)
+    end)
+  end
+
+  defp leaders_for_topic_partitions(topic_partitions, leaders) do
+    topic_partitions
+    |> Enum.flat_map(fn([topic: topic, partitions: partitions]) -> Enum.map(partitions, fn(partition) -> {topic, partition} end) end)
+    |> Enum.group_by(fn {topic, partition} -> leaders[topic][partition] end)
+    |> Enum.map(fn {leader, topic_partitions} ->
+      topic = topic_partitions |> hd |> elem(0)
+      partitions = topic_partitions |> Enum.map(&(elem(&1, 1)))
+      {leader, [topic_partitions: [[topic: topic, partitions: partitions]]]}
     end)
   end
 
