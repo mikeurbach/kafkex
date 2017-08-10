@@ -31,22 +31,16 @@ defmodule Kafkex.Protocol.Offsets do
   defmodule Request do
     @api_key 2
     @api_version 0
-    @default_max_offsets 1
     @default_replica_id -1
-    @default_time -1
 
     defstruct replica_id: -1, topics_partitions: []
 
-    def build(correlation_id, client_id, [topic_partitions: topic_partitions] = options) do
-      replica_id = options |> Keyword.get(:replica_id, @default_replica_id)
-      time = options |> Keyword.get(:time, @default_time)
-      max_offsets = options |> Keyword.get(:max_offsets, @default_max_offsets)
-
+    def build(correlation_id, client_id, [topic_partitions: topic_partitions, time: time, max_offsets: max_offsets]) do
       topic_partitions_list = topic_partitions
       |> Enum.map(&({time, max_offsets, &1}))
       |> build_list(&Kafkex.Protocol.Offsets.TopicPartitions.build/1)
 
-      [build_headers(@api_key, @api_version, correlation_id, client_id), << replica_id :: 32 >>, topic_partitions_list]
+      [build_headers(@api_key, @api_version, correlation_id, client_id), << @default_replica_id :: 32 >>, topic_partitions_list]
     end
   end
 

@@ -27,8 +27,8 @@ defmodule Kafkex.Client do
     GenServer.call(pid, {:produce, topic, partition, messages}, @socket_timeout_ms)
   end
 
-  def offsets(pid, topic_partitions) do
-    GenServer.call(pid, {:offsets, topic_partitions})
+  def offsets(pid, topic_partitions, time \\ -1, max_offsets \\ 1) do
+    GenServer.call(pid, {:offsets, topic_partitions, time, max_offsets})
   end
 
   def group_coordinator(pid, group_id) do
@@ -61,10 +61,11 @@ defmodule Kafkex.Client do
     {:reply, {:ok, response}, new_state}
   end
 
-  def handle_call({:offsets, topic_partitions}, _from, %{leaders: leaders} = state) do
+  def handle_call({:offsets, topic_partitions, time, max_offsets}, _from, %{leaders: leaders} = state) do
     {responses, new_state} =
       topic_partitions
       |> leaders_for_topic_partitions(leaders)
+      |> Enum.map(fn {broker, topic_partitions} -> {broker, Keyword.merge(topic_partitions, time: time, max_offsets: max_offsets)} end)
       |> request_for_brokers(Kafkex.Protocol.Offsets, state)
 
     response_topic_partitions =
