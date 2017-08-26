@@ -31,6 +31,10 @@ defmodule Kafkex.Client do
     GenServer.call(pid, {:offsets, topic_partitions, time, max_offsets})
   end
 
+  def offset_fetch(pid, group_id, topic_partitions) do
+    GenServer.call(pid, {:offset_fetch, group_id, topic_partitions})
+  end
+
   def group_coordinator(pid, group_id) do
     GenServer.call(pid, {:group_coordinator, group_id}, @socket_timeout_ms)
   end
@@ -73,6 +77,19 @@ defmodule Kafkex.Client do
       |> Enum.flat_map(fn {:ok, %Kafkex.Protocol.Offsets.Response{topic_partitions: topic_partitions}} -> topic_partitions end)
 
     response = %Kafkex.Protocol.Offsets.Response{topic_partitions: response_topic_partitions}
+
+    {:reply, {:ok, response}, new_state}
+  end
+
+  def handle_call({:offset_fetch, group_id, topic_partitions}, _from, state) do
+    {{:ok, response}, new_state} =
+      group_id
+      |> fetch_group_coordinator(state)
+
+    {{:ok, response}, new_state} =
+      response
+      |> (fn(%Kafkex.Protocol.GroupCoordinator.Response{broker: %Kafkex.Protocol.Broker{node_id: node_id}}) -> node_id end).()
+      |> request_sync(Kafkex.Protocol.OffsetFetch, new_state, group_id: group_id, topic_partitions: topic_partitions)
 
     {:reply, {:ok, response}, new_state}
   end
