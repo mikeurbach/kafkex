@@ -62,7 +62,7 @@ defmodule Kafkex.Client do
       |> Map.get(partition)
       |> request_sync(Kafkex.Protocol.Produce, state, topic_data: [[topic: topic, partition: partition, data: messages]])
 
-    {:reply, {:ok, response}, new_state}
+    {:reply, response, new_state}
   end
 
   def handle_call({:offsets, topic_partitions, time, max_offsets}, _from, %{leaders: leaders} = state) do
@@ -76,9 +76,9 @@ defmodule Kafkex.Client do
       responses
       |> Enum.flat_map(fn {:ok, %Kafkex.Protocol.Offsets.Response{topic_partitions: topic_partitions}} -> topic_partitions end)
 
-    response = %Kafkex.Protocol.Offsets.Response{topic_partitions: response_topic_partitions}
+    response = {:ok, %Kafkex.Protocol.Offsets.Response{topic_partitions: response_topic_partitions}}
 
-    {:reply, {:ok, response}, new_state}
+    {:reply, response, new_state}
   end
 
   def handle_call({:offset_fetch, group_id, topic_partitions}, _from, state) do
@@ -86,18 +86,18 @@ defmodule Kafkex.Client do
       group_id
       |> fetch_group_coordinator(state)
 
-    {{:ok, response}, new_state} =
+    {response, new_state} =
       response
       |> (fn(%Kafkex.Protocol.GroupCoordinator.Response{broker: %Kafkex.Protocol.Broker{node_id: node_id}}) -> node_id end).()
       |> request_sync(Kafkex.Protocol.OffsetFetch, new_state, group_id: group_id, topic_partitions: topic_partitions)
 
-    {:reply, {:ok, response}, new_state}
+    {:reply, response, new_state}
   end
 
   def handle_call({:group_coordinator, group_id}, _from, state) do
     {response, new_state} = fetch_group_coordinator(group_id, state)
 
-    {:reply, {:ok, response}, new_state}
+    {:reply, response, new_state}
   end
 
   def handle_call({:join_group, topic, group_id, member_id}, _from, state) do

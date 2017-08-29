@@ -57,8 +57,8 @@ defmodule Kafkex.Protocol do
     << length(items) :: 32, build_items(items) :: binary >>
   end
 
-  def build_items([]), do: []
-  def build_items([item|items]), do: [build_item(item), build_items(items)]
+  def build_items([]), do: <<>>
+  def build_items([item|items]), do: build_item(item) <> build_items(items)
 
   def build_item(item, size_bits \\ 16)
   def build_item(item, size_bits) when is_nil(item), do: << -1 :: size(size_bits) >>
