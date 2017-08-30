@@ -56,9 +56,11 @@ defmodule Kafkex.Consumer do
   defp finish_init(client, topic, group_id, join_response, sync_response) do
     Process.flag(:trap_exit, true)
 
+    offsets = fetch_offsets(client, topic, group_id, sync_response)
+
     spawn_link(__MODULE__, :heartbeat, [client, group_id, join_response.generation_id, join_response.member_id])
 
-    {:ok, %{client: client, topic: topic, group_id: group_id, member_id: join_response.member_id, member_assignment: sync_response}}
+    {:ok, %{client: client, topic: topic, group_id: group_id, member_id: join_response.member_id, member_assignment: sync_response, offsets: offsets}}
   end
 
   def heartbeat(client, group_id, generation_id, member_id) do
@@ -88,4 +90,36 @@ defmodule Kafkex.Consumer do
     end)
   end
   defp assemble_group_assignment(_, _, _), do: []
+
+  defp fetch_offsets(client, topic, group_id, sync_response) do
+    partitions = sync_response.partition_assignments
+    |> Enum.find(&(&1.topic == topic))
+    |> Map.get(:partitions)
+
+    fetch_group_offsets(client, topic, partitions, group_id) || fetch_topic_offsets(client, topic, partitions)
+  end
+
+  defp fetch_group_offsets(client, topic, partitions, group_id) do
+    {:ok, response} = Kafkex.Client.offset_fetch(client, group_id, [[topic: topic, partitions: partitions]])
+
+    topic_partitions = response.topic_partitions |> Enum.find(&(&1.topic == topic))
+
+    is_new_group = topic_partitions.partitions |> Enum.all?(&(&1.offset == -1))
+
+    unless is_new_group do
+      topic_partitions.partitions
+      |> Enum.map(&({&1.partition, &1.offset}))
+      |> Enum.into(%{})
+    end
+  end
+
+  defp fetch_topic_offsets(client, topic, partitions) do
+    {:ok, response} = Kafkex.Client.offsets(client, [[topic: topic, partitions: partitions]])
+
+    topic_partitions = response.topic_partitions |> Enum.find(&(&1.topic == topic))
+
+    topic_partitions.partitions
+    |> Enum.map(&({&1.partition, hd(&1.offsets)}))
+    |> Enum.into(%{})
+  end
 end
