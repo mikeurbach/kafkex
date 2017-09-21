@@ -27,6 +27,10 @@ defmodule Kafkex.Client do
     GenServer.call(pid, {:produce, topic, partition, messages}, @socket_timeout_ms)
   end
 
+  def fetch(pid, topic_partitions) do
+    GenServer.call(pid, {:fetch, topic_partitions})
+  end
+
   def offsets(pid, topic_partitions, time \\ -1, max_offsets \\ 1) do
     GenServer.call(pid, {:offsets, topic_partitions, time, max_offsets})
   end
@@ -61,6 +65,33 @@ defmodule Kafkex.Client do
       |> Map.get(topic)
       |> Map.get(partition)
       |> request_sync(Kafkex.Protocol.Produce, state, topic_data: [[topic: topic, partition: partition, data: messages]])
+
+    {:reply, response, new_state}
+  end
+
+  def handle_call({:fetch, topic_partitions}, _from, %{leaders: leaders} = state) do
+    topic_partitions_for_topic =
+      topic_partitions
+      |> Enum.map(fn([topic: topic, partitions: partitions]) -> {topic, [topic: topic, partitions: partitions]} end)
+      |> Enum.into(%{})
+
+    {responses, new_state} =
+      topic_partitions
+      |> Enum.map(fn([topic: topic, partitions: partitions]) -> [topic: topic, partitions: Enum.map(partitions, &(&1[:partition]))] end)
+      |> leaders_for_topic_partitions(leaders)
+      |> Enum.map(fn {broker, [topic_partitions: [[topic: topic, partitions: _]]]} -> {broker, [topic_partitions: [topic_partitions_for_topic[topic]]]} end)
+      |> request_for_brokers(Kafkex.Protocol.Fetch, state)
+
+    topic_responses =
+      responses
+      |> Enum.flat_map(fn {:ok, %Kafkex.Protocol.Fetch.Response{topic_responses: topic_responses}} -> topic_responses end)
+
+    throttle_time_ms =
+      responses
+      |> Enum.map(fn {:ok, %Kafkex.Protocol.Fetch.Response{throttle_time_ms: throttle_time_ms}} -> throttle_time_ms end)
+      |> Enum.sum
+
+    response = {:ok, %Kafkex.Protocol.Fetch.Response{topic_responses: topic_responses, throttle_time_ms: throttle_time_ms}}
 
     {:reply, response, new_state}
   end
