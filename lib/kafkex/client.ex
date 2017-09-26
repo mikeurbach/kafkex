@@ -35,6 +35,10 @@ defmodule Kafkex.Client do
     GenServer.call(pid, {:offsets, topic_partitions, time, max_offsets})
   end
 
+  def offset_commit(pid, group_id, generation_id, member_id, retention_time_ms, topic_partitions) do
+    GenServer.call(pid, {:offset_commit, group_id, generation_id, member_id, retention_time_ms, topic_partitions})
+  end
+
   def offset_fetch(pid, group_id, topic_partitions) do
     GenServer.call(pid, {:offset_fetch, group_id, topic_partitions})
   end
@@ -108,6 +112,30 @@ defmodule Kafkex.Client do
       |> Enum.flat_map(fn {:ok, %Kafkex.Protocol.Offsets.Response{topic_partitions: topic_partitions}} -> topic_partitions end)
 
     response = {:ok, %Kafkex.Protocol.Offsets.Response{topic_partitions: response_topic_partitions}}
+
+    {:reply, response, new_state}
+  end
+
+  def handle_call({:offset_commit, group_id, generation_id, member_id, retention_time_ms, topic_partitions}, _from, %{leaders: leaders} = state) do
+    topic_partitions_for_topic =
+      topic_partitions
+      |> Enum.map(fn([topic: topic, partitions: partitions]) -> {topic, [topic: topic, partitions: partitions]} end)
+      |> Enum.into(%{})
+
+    {responses, new_state} =
+      topic_partitions
+      |> Enum.map(fn([topic: topic, partitions: partitions]) -> [topic: topic, partitions: Enum.map(partitions, &(&1[:partition]))] end)
+      |> leaders_for_topic_partitions(leaders)
+      |> Enum.map(fn {broker, [topic_partitions: [[topic: topic, partitions: _]]]} ->
+        {broker, [group_id: group_id, generation_id: generation_id, member_id: member_id, retention_time_ms: retention_time_ms, topic_partitions: [topic_partitions_for_topic[topic]]]}
+      end)
+      |> request_for_brokers(Kafkex.Protocol.OffsetCommit, state)
+
+    topic_partitions =
+      responses
+      |> Enum.flat_map(fn {:ok, %Kafkex.Protocol.OffsetCommit.Response{topic_partitions: topic_partitions}} -> topic_partitions end)
+
+    response = {:ok, %Kafkex.Protocol.OffsetCommit.Response{topic_partitions: topic_partitions}}
 
     {:reply, response, new_state}
   end

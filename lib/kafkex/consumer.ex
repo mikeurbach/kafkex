@@ -60,7 +60,7 @@ defmodule Kafkex.Consumer do
 
     spawn_link(__MODULE__, :heartbeat, [client, group_id, join_response.generation_id, join_response.member_id])
 
-    {:ok, %{client: client, topic: topic, group_id: group_id, member_id: join_response.member_id, member_assignment: sync_response, offsets: offsets}}
+    {:ok, %{client: client, topic: topic, group_id: group_id, member_id: join_response.member_id, generation_id: join_response.generation_id, member_assignment: sync_response, offsets: offsets}}
   end
 
   def heartbeat(client, group_id, generation_id, member_id) do

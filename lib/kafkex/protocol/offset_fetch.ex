@@ -6,7 +6,7 @@ defmodule Kafkex.Protocol.OffsetFetch do
 
     def build(partition), do: << partition :: 32 >>
     def parse(<< partition :: 32, offset :: 64-signed, metadata_length :: 16, metadata :: size(metadata_length)-binary, partition_error_code :: 16, rest :: binary >>) do
-      {%Kafkex.Protocol.OffsetFetch.Partition{partition: partition, offset: offset, metadata: metadata, error_code: error_code(partition_error_code), }, rest}
+      {%Kafkex.Protocol.OffsetFetch.Partition{partition: partition, offset: offset, metadata: metadata, error_code: error_code(partition_error_code)}, rest}
     end
   end
 
