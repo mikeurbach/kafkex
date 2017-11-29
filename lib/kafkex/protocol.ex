@@ -70,4 +70,11 @@ defmodule Kafkex.Protocol do
     {item, new_rest} = parser.(rest)
     parse_list(length - 1, new_rest, parser, [item | items])
   end
+
+
+  def parse_nullable(-1, binary), do: {nil, binary}
+  def parse_nullable(item_size, binary) do
+    << item :: size(item_size)-binary, rest :: binary >> = binary
+    {item, rest}
+  end
 end
