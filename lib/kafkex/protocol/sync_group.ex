@@ -10,7 +10,7 @@ defmodule Kafkex.Protocol.SyncGroup do
 
     def parse(<< topic_length :: 16, topic :: size(topic_length)-binary, partitions_length :: 32, rest :: binary >>) do
       {partitions, rest} = parse_list(partitions_length, rest, fn(<< partition :: 32, rest :: binary >>) -> {partition, rest} end)
-      {%PartitionAssignment{topic: topic, partitions: partitions}, rest}
+      {%PartitionAssignment{topic: topic, partitions: Enum.reverse(partitions)}, rest}
     end
   end
 

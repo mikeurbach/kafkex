@@ -1,13 +1,14 @@
 defmodule Kafkex.Consumer do
-  use GenServer
+  use GenStage
 
   require Logger
 
   @heartbeat_interval 1000
   @member_assignment_version 0
+  @retention_time_ms 604800000
 
   def start_link({seed_brokers, topic, group_id}) do
-    GenServer.start_link(__MODULE__, {seed_brokers, topic, group_id})
+    GenStage.start_link(__MODULE__, {seed_brokers, topic, group_id})
   end
 
   def init({seed_brokers, topic, group_id}) do
@@ -15,10 +16,26 @@ defmodule Kafkex.Consumer do
     join_group(client, topic, group_id, "")
   end
 
+  def handle_demand(demand, state) do
+    Logger.debug("[#{__MODULE__}][#{inspect(self())}] received fresh demand: #{demand}")
+    fill_demand(demand, state)
+  end
+
+  def handle_info({:check_demand}, %{pending_demand: pending_demand} = state) when pending_demand > 0 do
+    Logger.debug("[#{__MODULE__}][#{inspect(self())}] found pending demand: #{pending_demand}")
+    send(self(), {:check_demand})
+    fill_demand(0, state)
+  end
+
+  def handle_info({:check_demand}, state) do
+    send(self(), {:check_demand})
+    {:noreply, [], state}
+  end
+
   def handle_info({:EXIT, _from, reason}, %{client: client, topic: topic, group_id: group_id, member_id: member_id}) do
     Logger.warn("[#{__MODULE__}][#{inspect(self())}] process died: #{inspect(reason)}")
-    {:ok, state} = join_group(client, topic, group_id, member_id)
-    {:noreply, state}
+    {:ok, new_state} = join_group(client, topic, group_id, member_id)
+    {:noreply, [], new_state}
   end
 
   defp join_group(client, topic, group_id, member_id) do
@@ -60,7 +77,16 @@ defmodule Kafkex.Consumer do
 
     spawn_link(__MODULE__, :heartbeat, [client, group_id, join_response.generation_id, join_response.member_id])
 
-    {:ok, %{client: client, topic: topic, group_id: group_id, member_id: join_response.member_id, generation_id: join_response.generation_id, member_assignment: sync_response, offsets: offsets}}
+    send(self(), {:check_demand})
+
+    {:producer, %{client: client,
+                  topic: topic,
+                  group_id: group_id,
+                  member_id: join_response.member_id,
+                  generation_id: join_response.generation_id,
+                  member_assignment: sync_response,
+                  offsets: offsets,
+                  pending_demand: 0}}
   end
 
   def heartbeat(client, group_id, generation_id, member_id) do
@@ -69,6 +95,19 @@ defmodule Kafkex.Consumer do
     :timer.sleep(@heartbeat_interval)
 
     heartbeat(client, group_id, generation_id, member_id)
+  end
+
+  def fill_demand(current_demand, %{pending_demand: pending_demand} = state) do
+    Logger.debug("[#{__MODULE__}][#{inspect(self())}] attempting to fill demand: #{current_demand}, pending: #{pending_demand}")
+
+    new_demand = current_demand + pending_demand
+    topic_responses = fetch(new_demand, state)
+    new_offsets = commit(topic_responses, state)
+    events = events_from_response(topic_responses)
+
+    Logger.debug("[#{__MODULE__}][#{inspect(self())}] fetched #{length(events)} events")
+
+    {:noreply, events, %{state | offsets: new_offsets, pending_demand: new_demand - length(events)}}
   end
 
   defp assemble_group_assignment(client, topic, %Kafkex.Protocol.JoinGroup.Response{leader_id: me, member_id: me, members: members}) do
@@ -121,5 +160,70 @@ defmodule Kafkex.Consumer do
     topic_partitions.partitions
     |> Enum.map(&({&1.partition, hd(&1.offsets)}))
     |> Enum.into(%{})
+  end
+
+  # Kafkex.Client.fetch(client, [[topic: topic, partitions: [[partition: 0, offset: 1]]]])
+  defp fetch(_demand, %{client: client} = state) do
+    topic_partitions = build_fetch_options(state)
+
+    Logger.debug("[#{__MODULE__}][#{inspect(self())}] fetching with topic partitions: #{inspect(topic_partitions)}")
+
+    {:ok, %Kafkex.Protocol.Fetch.Response{topic_responses: topic_responses}} = Kafkex.Client.fetch(client, topic_partitions)
+
+    topic_responses
+  end
+
+  defp build_fetch_options(%{member_assignment: member_assignment, offsets: offsets, topic: topic}) do
+    member_assignment.partition_assignments
+    |> Enum.filter(&(&1.topic == topic))
+    |> Enum.map(fn(partition_assignment) ->
+      partitions = partition_assignment.partitions
+      |> Enum.map(fn(partition) ->
+        [partition: partition, offset: offsets[partition]]
+      end)
+
+      [topic: topic, partitions: partitions]
+    end)
+  end
+
+  # Kafkex.Client.offset_commit(client, group_id, generation_id, member_id, @retention_time_ms, [[topic: topic, partitions: [[partition: 0, offset: 0, metadata: nil]]]])
+  defp commit(topic_responses, %{client: client, group_id: group_id, generation_id: generation_id, member_id: member_id, offsets: offsets, topic: topic}) do
+    latest_offsets = offsets_from_response(topic_responses, topic)
+
+    if map_size(latest_offsets) > 0 do
+      Kafkex.Client.offset_commit(client, group_id, generation_id, member_id, @retention_time_ms, [build_commit_options(latest_offsets, topic)])
+      Logger.debug("[#{__MODULE__}][#{inspect(self())}] committed offsets: #{inspect(latest_offsets)}")
+      Map.merge(offsets, latest_offsets)
+    else
+      offsets
+    end
+  end
+
+  defp build_commit_options(latest_offsets, topic) do
+    partitions = latest_offsets
+    |> Enum.map(fn {partition, offset} -> [partition: partition, offset: offset, metadata: nil] end)
+
+    [topic: topic, partitions: partitions]
+  end
+
+  defp events_from_response(topic_responses) do
+    topic_responses
+    |> Enum.flat_map(fn(topic_response) ->
+      topic_response.partitions
+      |> Enum.flat_map(fn (partition) -> partition.messages
+      end)
+    end)
+  end
+
+  defp offsets_from_response(topic_responses, topic) do
+    topic_responses
+    |> Enum.filter(fn(topic_response) -> topic_response.topic == topic end)
+    |> Enum.flat_map(fn(topic_response) -> topic_response.partitions end)
+    |> Enum.reduce(%{}, fn(partition, acc) ->
+      case List.last(partition.messages) do
+        nil -> acc
+        message -> Map.put(acc, partition.partition, message.offset + 1)
+      end
+    end)
   end
 end
