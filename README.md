@@ -27,21 +27,17 @@ If [available in Hex](https://hex.pm/docs/publish), the package can be installed
 ## Examples
 
 ```
-iex(1)> {:ok, producer1} = Kafkex.Producer.start_link({[{'localhost', 9092}], "foo"})
-{:ok, #PID<0.176.0>}
-iex(2)> {:ok, producer2} = Kafkex.Producer.start_link({[{'localhost', 9092}], "foo"})
-{:ok, #PID<0.182.0>}
-iex(3)> {:ok, producer3} = Kafkex.Producer.start_link({[{'localhost', 9092}], "foo"})
+iex(1)> {:ok, producer} = Kafkex.Producer.start_link({[{'localhost', 9092}], "foo"})
 {:ok, #PID<0.188.0>}
-iex(4)> ["foo", "bar", "baz"] |> Flow.from_enumerable |> Flow.into_stages([producer1, producer2, producer3])
+iex(2)> Stream.repeatedly(fn() -> {"key", "value"} end) |> Flow.from_enumerable |> Flow.into_stages([producer])
 {:ok, #PID<0.194.0>}
-```
-
-```
-iex(1)> {:ok, consumer1} = Kafkex.Consumer.start_link({[{'localhost', 9092}], "foo", "group"})
+iex(3)> {:ok, consumer} = Kafkex.Consumer.start_link({[{'localhost', 9092}], "foo", "group"})
 {:ok, #PID<0.149.0>}
-iex(2)> {:ok, consumer2} = Kafkex.Consumer.start_link({[{'localhost', 9092}], "foo", "group"})
-{:ok, #PID<0.158.0>}
-iex(3)> {:ok, consumer3} = Kafkex.Consumer.start_link({[{'localhost', 9092}], "foo", "group"})
-{:ok, #PID<0.166.0>}
+iex(4)> Flow.from_stage(consumer) |> Enum.take(3)
+[%Kafkex.Protocol.Message{key: "key", offset: 155227127,
+  timestamp: 1513012816377, value: "value"},
+ %Kafkex.Protocol.Message{key: "key", offset: 155227128,
+  timestamp: 1513012816377, value: "value"},
+ %Kafkex.Protocol.Message{key: "key", offset: 155227129,
+  timestamp: 1513012816377, value: "value"}]
 ```
