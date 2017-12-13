@@ -34,7 +34,7 @@ defmodule Kafkex.Consumer do
 
   def handle_info({:EXIT, _from, reason}, %{client: client, topic: topic, group_id: group_id, member_id: member_id}) do
     Logger.warn("[#{__MODULE__}][#{inspect(self())}] process died: #{inspect(reason)}")
-    {:ok, new_state} = join_group(client, topic, group_id, member_id)
+    {:producer, new_state} = join_group(client, topic, group_id, member_id)
     {:noreply, [], new_state}
   end
 
