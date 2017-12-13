@@ -86,7 +86,8 @@ defmodule Kafkex.Consumer do
                   generation_id: join_response.generation_id,
                   member_assignment: sync_response,
                   offsets: offsets,
-                  pending_demand: 0}}
+                  pending_demand: 0,
+                  pending_events: []}}
   end
 
   def heartbeat(client, group_id, generation_id, member_id) do
@@ -97,17 +98,30 @@ defmodule Kafkex.Consumer do
     heartbeat(client, group_id, generation_id, member_id)
   end
 
-  def fill_demand(current_demand, %{pending_demand: pending_demand} = state) do
-    Logger.debug("[#{__MODULE__}][#{inspect(self())}] attempting to fill demand: #{current_demand}, pending: #{pending_demand}")
+  def fill_demand(current_demand, %{pending_demand: pending_demand, pending_events: pending_events} = state) when length(pending_events) == 0 do
+    Logger.debug("[#{__MODULE__}][#{inspect(self())}] attempting to fill demand by fetching: #{current_demand}, pending: #{pending_demand}")
 
     new_demand = current_demand + pending_demand
     topic_responses = fetch(new_demand, state)
     new_offsets = commit(topic_responses, state)
-    events = events_from_response(topic_responses)
 
-    Logger.debug("[#{__MODULE__}][#{inspect(self())}] fetched #{length(events)} events")
+    {ready_events, pending_events} = events_from_response(new_demand, topic_responses)
 
-    {:noreply, events, %{state | offsets: new_offsets, pending_demand: new_demand - length(events)}}
+    Logger.debug("[#{__MODULE__}][#{inspect(self())}] fetched #{length(ready_events)} events, with #{length(pending_events)} pending")
+
+    {:noreply, ready_events, %{state | offsets: new_offsets, pending_demand: new_demand - length(ready_events), pending_events: pending_events}}
+  end
+
+  def fill_demand(current_demand, %{pending_demand: pending_demand, pending_events: pending_events} = state) do
+    Logger.debug("[#{__MODULE__}][#{inspect(self())}] attempting to fill demand by dequeueing: #{current_demand}, pending: #{pending_demand}")
+
+    new_demand = current_demand + pending_demand
+
+    {ready_events, pending_events} = dequeue_pending_events(new_demand, pending_events)
+
+    Logger.debug("[#{__MODULE__}][#{inspect(self())}] dequeued #{length(ready_events)} events, with #{length(pending_events)} pending")
+
+    {:noreply, ready_events, %{state | pending_demand: new_demand - length(ready_events), pending_events: pending_events}}
   end
 
   defp assemble_group_assignment(client, topic, %Kafkex.Protocol.JoinGroup.Response{leader_id: me, member_id: me, members: members}) do
@@ -162,6 +176,11 @@ defmodule Kafkex.Consumer do
     |> Enum.into(%{})
   end
 
+  defp dequeue_pending_events(demand, pending_events), do: dequeue_pending_events(demand, pending_events, [])
+  defp dequeue_pending_events(0, pending_events, events), do: {events, pending_events}
+  defp dequeue_pending_events(_demand, [], events), do: {events, []}
+  defp dequeue_pending_events(demand, [event | rest], events), do: dequeue_pending_events(demand - 1, rest, [event | events])
+
   # Kafkex.Client.fetch(client, [[topic: topic, partitions: [[partition: 0, offset: 1]]]])
   defp fetch(_demand, %{client: client} = state) do
     topic_partitions = build_fetch_options(state)
@@ -206,13 +225,14 @@ defmodule Kafkex.Consumer do
     [topic: topic, partitions: partitions]
   end
 
-  defp events_from_response(topic_responses) do
+  defp events_from_response(demand, topic_responses) do
     topic_responses
     |> Enum.flat_map(fn(topic_response) ->
       topic_response.partitions
       |> Enum.flat_map(fn (partition) -> partition.messages
       end)
     end)
+    |> Enum.split(demand)
   end
 
   defp offsets_from_response(topic_responses, topic) do
