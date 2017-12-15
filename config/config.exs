@@ -18,8 +18,8 @@ use Mix.Config
 #
 # Or configure a 3rd-party app:
 #
-#     config :logger, level: :info
-#
+config :logger, level: :info
+
 
 config :kafkex, seed_brokers: [{'localhost', 9092}]
 

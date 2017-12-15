@@ -99,7 +99,7 @@ defmodule Kafkex.Consumer do
   end
 
   def fill_demand(current_demand, %{pending_demand: pending_demand, pending_events: pending_events} = state) when length(pending_events) == 0 do
-    Logger.debug("[#{__MODULE__}][#{inspect(self())}] attempting to fill demand by fetching: #{current_demand}, pending: #{pending_demand}")
+    Logger.debug("[#{__MODULE__}][#{inspect(self())}] attempting to fill demand by fetching, current: #{current_demand}, pending: #{pending_demand}")
 
     new_demand = current_demand + pending_demand
     topic_responses = fetch(new_demand, state)
@@ -113,7 +113,7 @@ defmodule Kafkex.Consumer do
   end
 
   def fill_demand(current_demand, %{pending_demand: pending_demand, pending_events: pending_events} = state) do
-    Logger.debug("[#{__MODULE__}][#{inspect(self())}] attempting to fill demand by dequeueing: #{current_demand}, pending: #{pending_demand}")
+    Logger.debug("[#{__MODULE__}][#{inspect(self())}] attempting to fill demand by dequeueing, current:: #{current_demand}, pending: #{pending_demand}")
 
     new_demand = current_demand + pending_demand
 
