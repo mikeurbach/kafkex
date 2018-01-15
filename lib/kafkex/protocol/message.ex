@@ -39,11 +39,17 @@ defmodule Kafkex.Protocol.Message do
 
   defp parse_helper(base_size, bytes_remaining, offset, key_size, binary, items, ts \\ nil) do
     {key, << value_size :: 32-signed, rest :: binary >>} = parse_nullable(key_size, binary)
-    {value, << new_rest :: binary >>} = parse_nullable(value_size, rest)
 
-    bytes_parsed = base_size + byte_size(key || <<>>) + byte_size(value || <<>>)
+    if value_size <= byte_size(rest) do
+      {value, << new_rest :: binary >>} = parse_nullable(value_size, rest)
 
-    parse(bytes_remaining - bytes_parsed, new_rest, [%Kafkex.Protocol.Message{offset: offset, timestamp: ts, key: key, value: value} | items])
+      bytes_parsed = base_size + byte_size(key || <<>>) + byte_size(value || <<>>)
+
+      parse(bytes_remaining - bytes_parsed, new_rest, [%Kafkex.Protocol.Message{offset: offset, timestamp: ts, key: key, value: value} | items])
+    else
+      # Logger.warn("[#{__MODULE__}][#{inspect(self())}] expected #{value_size}, only #{byte_size(rest)} bytes remaining! extra: #{inspect(rest, limit: :infinity)}")
+      {items, <<>>}
+    end
   end
 
   defp timestamp(), do: DateTime.utc_now |> DateTime.to_unix(:milliseconds)
