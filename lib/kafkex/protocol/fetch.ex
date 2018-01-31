@@ -13,6 +13,9 @@ defmodule Kafkex.Protocol.Fetch do
 
     def parse(<< partition :: 32, partition_error_code :: 16, high_watermark :: 64-signed, message_size :: 32, rest :: binary >>) do
       {messages, new_rest} = Kafkex.Protocol.Message.parse(message_size, rest, [])
+
+      messages = messages |> Enum.map(fn(message) -> %{message | partition: partition} end)
+
       {%Kafkex.Protocol.Fetch.Partition{partition: partition, error_code: error_code(partition_error_code), high_watermark: high_watermark, messages: Enum.reverse(messages)}, new_rest}
     end
   end

@@ -8,7 +8,7 @@ defmodule Kafkex.Protocol.Message do
   @base_size_v0 26 # bytes for v0 message metadata
   @base_size_v1 34 # bytes for v1 message metadata
 
-  defstruct offset: -1, timestamp: -1, key: "", value: ""
+  defstruct partition: -1, offset: -1, timestamp: -1, key: "", value: ""
 
   def build([]), do: <<>>
   def build([{key,value}|rest]) do

@@ -103,11 +103,12 @@ defmodule Kafkex.Consumer do
 
     new_demand = current_demand + pending_demand
     topic_responses = fetch(new_demand, state)
-    new_offsets = commit(topic_responses, state)
 
     {ready_events, pending_events} = events_from_response(new_demand, topic_responses)
 
     Logger.debug("[#{__MODULE__}][#{inspect(self())}] fetched #{length(ready_events)} events, with #{length(pending_events)} pending")
+
+    new_offsets = commit(ready_events, state)
 
     {:noreply, ready_events, %{state | offsets: new_offsets, pending_demand: new_demand - length(ready_events), pending_events: pending_events}}
   end
@@ -121,7 +122,9 @@ defmodule Kafkex.Consumer do
 
     Logger.debug("[#{__MODULE__}][#{inspect(self())}] dequeued #{length(ready_events)} events, with #{length(pending_events)} pending")
 
-    {:noreply, ready_events, %{state | pending_demand: new_demand - length(ready_events), pending_events: pending_events}}
+    new_offsets = commit(ready_events, state)
+
+    {:noreply, ready_events, %{state | offsets: new_offsets, pending_demand: new_demand - length(ready_events), pending_events: pending_events}}
   end
 
   defp assemble_group_assignment(client, topic, %Kafkex.Protocol.JoinGroup.Response{leader_id: me, member_id: me, members: members}) do
@@ -206,10 +209,10 @@ defmodule Kafkex.Consumer do
   end
 
   # Kafkex.Client.offset_commit(client, group_id, generation_id, member_id, @retention_time_ms, [[topic: topic, partitions: [[partition: 0, offset: 0, metadata: nil]]]])
-  defp commit(topic_responses, %{client: client, group_id: group_id, generation_id: generation_id, member_id: member_id, offsets: offsets, topic: topic}) do
-    latest_offsets = offsets_from_response(topic_responses, topic)
+  defp commit(messages, %{client: client, group_id: group_id, generation_id: generation_id, member_id: member_id, offsets: offsets, topic: topic}) do
+    latest_offsets = IO.inspect(offsets_from_messages(messages))
 
-    if map_size(latest_offsets) > 0 do
+    if map_size(latest_offsets) > 0 and latest_offsets != offsets do
       Kafkex.Client.offset_commit(client, group_id, generation_id, member_id, @retention_time_ms, [build_commit_options(latest_offsets, topic)])
       Logger.debug("[#{__MODULE__}][#{inspect(self())}] committed offsets: #{inspect(latest_offsets)}")
       Map.merge(offsets, latest_offsets)
@@ -235,15 +238,17 @@ defmodule Kafkex.Consumer do
     |> Enum.split(demand)
   end
 
-  defp offsets_from_response(topic_responses, topic) do
-    topic_responses
-    |> Enum.filter(fn(topic_response) -> topic_response.topic == topic end)
-    |> Enum.flat_map(fn(topic_response) -> topic_response.partitions end)
-    |> Enum.reduce(%{}, fn(partition, acc) ->
-      case List.last(partition.messages) do
-        nil -> acc
-        message -> Map.put(acc, partition.partition, message.offset + 1)
-      end
+  defp offsets_from_messages(messages) do
+    messages
+    |> Enum.group_by(fn(message) -> message.partition end)
+    |> Enum.map(fn {partition, messages} ->
+      max_offset = messages
+      |> Enum.map(fn(message) -> message.offset end)
+      |> Enum.max
+
+      {partition, max_offset + 1}
     end)
+    |> Enum.filter(fn {_partition, offset} -> offset > 0 end)
+    |> Enum.into(%{})
   end
 end
