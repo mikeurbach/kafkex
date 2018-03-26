@@ -2,7 +2,15 @@ defmodule Kafkex.Producer do
   use GenStage
 
   def start_link({seed_brokers, topic}) do
-    GenStage.start_link(__MODULE__, {seed_brokers, topic})
+    start_link({seed_brokers, topic, %{}})
+  end
+
+  def start_link({seed_brokers, topic, options}) do
+    if options[:name] do
+      GenStage.start_link(__MODULE__, {seed_brokers, topic}, name: options[:name])
+    else
+      GenStage.start_link(__MODULE__, {seed_brokers, topic})
+    end
   end
 
   def init({seed_brokers, topic}) do

@@ -3,17 +3,27 @@ defmodule Kafkex.Consumer do
 
   require Logger
 
+  @latest_offset -1
+  @earliest_offset -2
   @heartbeat_interval 1000
   @member_assignment_version 0
   @retention_time_ms 604800000
 
   def start_link({seed_brokers, topic, group_id}) do
-    GenStage.start_link(__MODULE__, {seed_brokers, topic, group_id})
+    GenStage.start_link(__MODULE__, {seed_brokers, topic, group_id, %{}})
   end
 
-  def init({seed_brokers, topic, group_id}) do
+  def start_link({seed_brokers, topic, group_id, options}) do
+    if options[:name] do
+      GenStage.start_link(__MODULE__, {seed_brokers, topic, group_id, options}, name: options[:name])
+    else
+      GenStage.start_link(__MODULE__, {seed_brokers, topic, group_id, options})
+    end
+  end
+
+  def init({seed_brokers, topic, group_id, options}) do
     {:ok, client} = Kafkex.Client.start_link(seed_brokers)
-    join_group(client, topic, group_id, "")
+    join_group(client, topic, group_id, "", options)
   end
 
   def handle_demand(demand, state) do
@@ -32,13 +42,13 @@ defmodule Kafkex.Consumer do
     {:noreply, [], state}
   end
 
-  def handle_info({:EXIT, _from, reason}, %{client: client, topic: topic, group_id: group_id, member_id: member_id}) do
+  def handle_info({:EXIT, _from, reason}, %{client: client, topic: topic, group_id: group_id, member_id: member_id}, options: options) do
     Logger.warn("[#{__MODULE__}][#{inspect(self())}] process died: #{inspect(reason)}")
-    {:producer, new_state} = join_group(client, topic, group_id, member_id)
+    {:producer, new_state} = join_group(client, topic, group_id, member_id, options)
     {:noreply, [], new_state}
   end
 
-  defp join_group(client, topic, group_id, member_id) do
+  defp join_group(client, topic, group_id, member_id, options) do
     Logger.debug("[#{__MODULE__}][#{inspect(self())}] joining group: #{inspect({topic, group_id, member_id})}")
 
     {:ok, response} = Kafkex.Client.join_group(client, topic, group_id, member_id)
@@ -46,14 +56,14 @@ defmodule Kafkex.Consumer do
     case response do
       {:ok, join_response} ->
         Logger.info("[#{__MODULE__}][#{inspect(self())}] join group success: #{inspect(join_response)}")
-        sync_group(client, topic, group_id, join_response)
+        sync_group(client, topic, group_id, join_response, options)
       {:error, error} ->
         Logger.error("[#{__MODULE__}][#{inspect(self())}] join group error: #{inspect(error)}")
-        join_group(client, topic, group_id, member_id)
+        join_group(client, topic, group_id, member_id, options)
     end
   end
 
-  defp sync_group(client, topic, group_id, join_response) do
+  defp sync_group(client, topic, group_id, join_response, options) do
     group_assignment = assemble_group_assignment(client, topic, join_response)
 
     Logger.debug("[#{__MODULE__}][#{inspect(self())}] syncing group: #{inspect(group_assignment)}")
@@ -63,17 +73,17 @@ defmodule Kafkex.Consumer do
     case response do
       {:ok, sync_response} ->
         Logger.info("[#{__MODULE__}][#{inspect(self())}] sync group success: #{inspect(sync_response)}")
-        finish_init(client, topic, group_id, join_response, sync_response)
+        finish_init(client, topic, group_id, join_response, sync_response, options)
       {:error, error} ->
         Logger.error("[#{__MODULE__}][#{inspect(self())}] sync group error: #{inspect(error)}")
-        join_group(client, topic, group_id, join_response.member_id)
+        join_group(client, topic, group_id, join_response.member_id, options)
     end
   end
 
-  defp finish_init(client, topic, group_id, join_response, sync_response) do
+  defp finish_init(client, topic, group_id, join_response, sync_response, options) do
     Process.flag(:trap_exit, true)
 
-    offsets = fetch_offsets(client, topic, group_id, sync_response)
+    offsets = fetch_offsets(client, topic, group_id, sync_response, options)
 
     spawn_link(__MODULE__, :heartbeat, [client, group_id, join_response.generation_id, join_response.member_id])
 
@@ -86,6 +96,7 @@ defmodule Kafkex.Consumer do
                   generation_id: join_response.generation_id,
                   member_assignment: sync_response,
                   offsets: offsets,
+                  options: options,
                   pending_demand: 0,
                   pending_events: []}}
   end
@@ -147,12 +158,16 @@ defmodule Kafkex.Consumer do
   end
   defp assemble_group_assignment(_, _, _), do: []
 
-  defp fetch_offsets(client, topic, group_id, sync_response) do
+  defp fetch_offsets(client, topic, group_id, sync_response, options) do
     partitions = sync_response.partition_assignments
     |> Enum.find(&(&1.topic == topic))
     |> Map.get(:partitions)
 
-    fetch_group_offsets(client, topic, partitions, group_id) || fetch_topic_offsets(client, topic, partitions)
+    if options[:from_beginning] do
+      fetch_topic_offsets(client, topic, partitions, @earliest_offset)
+    else
+      fetch_group_offsets(client, topic, partitions, group_id) || fetch_topic_offsets(client, topic, partitions)
+    end
   end
 
   defp fetch_group_offsets(client, topic, partitions, group_id) do
@@ -170,7 +185,13 @@ defmodule Kafkex.Consumer do
   end
 
   defp fetch_topic_offsets(client, topic, partitions) do
-    {:ok, response} = Kafkex.Client.offsets(client, [[topic: topic, partitions: partitions]])
+    fetch_topic_offsets(client, topic, partitions, @latest_offset)
+  end
+
+  defp fetch_topic_offsets(client, topic, partitions, offset) do
+    Logger.debug("[#{__MODULE__}][#{inspect(self())}] fetching topic offsets for: #{inspect(offset)}")
+
+    {:ok, response} = Kafkex.Client.offsets(client, [[topic: topic, partitions: partitions]], offset)
 
     topic_partitions = response.topic_partitions |> Enum.find(&(&1.topic == topic))
 
@@ -210,7 +231,7 @@ defmodule Kafkex.Consumer do
 
   # Kafkex.Client.offset_commit(client, group_id, generation_id, member_id, @retention_time_ms, [[topic: topic, partitions: [[partition: 0, offset: 0, metadata: nil]]]])
   defp commit(messages, %{client: client, group_id: group_id, generation_id: generation_id, member_id: member_id, offsets: offsets, topic: topic}) do
-    latest_offsets = IO.inspect(offsets_from_messages(messages))
+    latest_offsets = offsets_from_messages(messages)
 
     if map_size(latest_offsets) > 0 and latest_offsets != offsets do
       Kafkex.Client.offset_commit(client, group_id, generation_id, member_id, @retention_time_ms, [build_commit_options(latest_offsets, topic)])
