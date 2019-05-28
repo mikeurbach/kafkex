@@ -14,10 +14,16 @@ defmodule Kafkex.Producer do
   end
 
   def init({seed_brokers, topic}) do
-    {:ok, client} = Kafkex.Client.start_link(seed_brokers)
-    {:ok, %{leaders: leaders}} = Kafkex.Client.metadata(client)
-    num_partitions = leaders |> Map.get(topic) |> Map.size
-    {:consumer, %{client: client, topic: topic, num_partitions: num_partitions, last_partition: -1}}
+    result = with {:ok, client} <- Kafkex.Client.start_link(seed_brokers),
+         {:ok, %{leaders: leaders}} <- Kafkex.Client.metadata(client),
+         {:ok, num_partitions} <- extract_partitions(leaders, topic) do
+      {:consumer, %{client: client, topic: topic, num_partitions: num_partitions, last_partition: -1}}
+    end
+
+    case result do
+      {:error, reason} -> {:stop, reason}
+      consumer -> consumer
+    end
   end
 
   def handle_events(events, _from, %{client: client, topic: topic, num_partitions: num_partitions, last_partition: last_partition} = state) do
@@ -30,4 +36,12 @@ defmodule Kafkex.Producer do
 
   defp next_partition(_, -1), do: 0
   defp next_partition(num_partitions, last_partition), do: rem(last_partition + 1, num_partitions)
+
+  def extract_partitions(%{}, topic) do
+    {:error, "No partitions found for topic " <> topic}
+  end
+
+  def extract_partitions(leaders, topic) do
+    leaders |> Map.get(topic) |> Map.size
+  end
 end
