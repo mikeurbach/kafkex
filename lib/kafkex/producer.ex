@@ -50,7 +50,7 @@ defmodule Kafkex.Producer do
   defp next_partition(num_partitions, last_partition), do: rem(last_partition + 1, num_partitions)
 
   def extract_partitions(leaders, topic) do
-    num_partitions = (Map.get(leaders, topic) || %{}) |> Map.size
+    num_partitions = (Map.get(leaders, topic) || %{}) |> Map.size()
 
     if num_partitions > 0 do
       {:ok, num_partitions}

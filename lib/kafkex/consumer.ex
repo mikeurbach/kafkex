@@ -14,6 +14,8 @@ defmodule Kafkex.Consumer do
   end
 
   def start_link({seed_brokers, topic, group_id, options}) do
+    options = Map.put(options, :auto_commit, Map.get(options, :auto_commit, true))
+
     if options[:name] do
       GenStage.start_link(__MODULE__, {seed_brokers, topic, group_id, options},
         name: options[:name]
@@ -145,7 +147,12 @@ defmodule Kafkex.Consumer do
 
   def fill_demand(
         current_demand,
-        %{pending_demand: pending_demand, pending_events: pending_events, options: options} = state
+        %{
+          pending_demand: pending_demand,
+          pending_events: pending_events,
+          offsets: offsets,
+          options: options
+        } = state
       )
       when length(pending_events) == 0 do
     Logger.debug(
@@ -165,11 +172,12 @@ defmodule Kafkex.Consumer do
       } pending"
     )
 
-    if options[:auto_commit] do
-      new_offsets = commit(ready_events, state)
-    else
-      new_offsets = offsets
-    end
+    new_offsets =
+      if options[:auto_commit] do
+        commit(ready_events, state)
+      else
+        offsets
+      end
 
     {:noreply, ready_events,
      %{
@@ -182,7 +190,12 @@ defmodule Kafkex.Consumer do
 
   def fill_demand(
         current_demand,
-        %{pending_demand: pending_demand, pending_events: pending_events} = state
+        %{
+          pending_demand: pending_demand,
+          pending_events: pending_events,
+          offsets: offsets,
+          options: options
+        } = state
       ) do
     Logger.debug(
       "[#{__MODULE__}][#{inspect(self())}] attempting to fill demand by dequeueing, current:: #{
@@ -200,11 +213,12 @@ defmodule Kafkex.Consumer do
       } pending"
     )
 
-    if options[:auto_commit] do
-      new_offsets = commit(ready_events, state)
-    else
-      new_offsets = offsets
-    end
+    new_offsets =
+      if options[:auto_commit] do
+        commit(ready_events, state)
+      else
+        offsets
+      end
 
     {:noreply, ready_events,
      %{
