@@ -46,35 +46,41 @@ defmodule Kafkex.Protocol do
   def error_code(43), do: :UNSUPPORTED_FOR_MESSAGE_FORMAT
 
   def build_headers(api_key, api_version, correlation_id, client_id) do
-    << api_key :: 16, api_version :: 16, correlation_id :: 32, byte_size(client_id) :: 16, client_id :: binary >>
+    <<api_key::16, api_version::16, correlation_id::32, byte_size(client_id)::16,
+      client_id::binary>>
   end
 
   def build_list(items, builder), do: build_list(0, items, builder, [])
-  def build_list(length, [], _, rest), do: [<< length :: 32, >>, rest]
-  def build_list(length, [item|items], builder, rest), do: build_list(length + 1, items, builder, [builder.(item), rest])
+  def build_list(length, [], _, rest), do: [<<length::32>>, rest]
+
+  def build_list(length, [item | items], builder, rest),
+    do: build_list(length + 1, items, builder, [builder.(item), rest])
 
   def build_primitive_list(items) when is_list(items) do
-    << length(items) :: 32, build_items(items) :: binary >>
+    <<length(items)::32, build_items(items)::binary>>
   end
 
   def build_items([]), do: <<>>
-  def build_items([item|items]), do: build_item(item) <> build_items(items)
+  def build_items([item | items]), do: build_item(item) <> build_items(items)
 
   def build_item(item, size_bits \\ 16)
-  def build_item(item, size_bits) when is_nil(item), do: << -1 :: size(size_bits) >>
-  def build_item(item, size_bits) when is_binary(item), do: << byte_size(item) :: size(size_bits), item :: binary >>
+  def build_item(item, size_bits) when is_nil(item), do: <<-1::size(size_bits)>>
+
+  def build_item(item, size_bits) when is_binary(item),
+    do: <<byte_size(item)::size(size_bits), item::binary>>
 
   def parse_list(length, rest, parser), do: parse_list(length, rest, parser, [])
   def parse_list(0, rest, _, items), do: {items, rest}
+
   def parse_list(length, rest, parser, items) do
     {item, new_rest} = parser.(rest)
     parse_list(length - 1, new_rest, parser, [item | items])
   end
 
-
   def parse_nullable(-1, binary), do: {nil, binary}
+
   def parse_nullable(item_size, binary) do
-    << item :: size(item_size)-binary, rest :: binary >> = binary
+    <<item::size(item_size)-binary, rest::binary>> = binary
     {item, rest}
   end
 end

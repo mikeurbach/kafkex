@@ -14,11 +14,13 @@ defmodule Kafkex.Producer do
   end
 
   def init({seed_brokers, topic}) do
-    result = with {:ok, client} <- Kafkex.Client.start_link(seed_brokers),
-         {:ok, %{leaders: leaders}} <- Kafkex.Client.metadata(client),
-         {:ok, num_partitions} <- extract_partitions(leaders, topic) do
-      {:consumer, %{client: client, topic: topic, num_partitions: num_partitions, last_partition: -1}}
-    end
+    result =
+      with {:ok, client} <- Kafkex.Client.start_link(seed_brokers),
+           {:ok, %{leaders: leaders}} <- Kafkex.Client.metadata(client),
+           {:ok, num_partitions} <- extract_partitions(leaders, topic) do
+        {:consumer,
+         %{client: client, topic: topic, num_partitions: num_partitions, last_partition: -1}}
+      end
 
     case result do
       {:error, reason} -> {:stop, reason}
@@ -26,13 +28,23 @@ defmodule Kafkex.Producer do
     end
   end
 
-  def handle_events(events, _from, %{client: client, topic: topic, num_partitions: num_partitions, last_partition: last_partition} = state) do
+  def handle_events(
+        events,
+        _from,
+        %{
+          client: client,
+          topic: topic,
+          num_partitions: num_partitions,
+          last_partition: last_partition
+        } = state
+      ) do
     partition = next_partition(num_partitions, last_partition)
     {:ok, _} = Kafkex.Client.produce(client, topic, partition, events)
     {:noreply, [], %{state | last_partition: partition}}
   end
 
-  def handle_info({{_pid, _subscription_tag}, {:producer, :done}}, state), do: {:noreply, [], state}
+  def handle_info({{_pid, _subscription_tag}, {:producer, :done}}, state),
+    do: {:noreply, [], state}
 
   defp next_partition(_, -1), do: 0
   defp next_partition(num_partitions, last_partition), do: rem(last_partition + 1, num_partitions)
@@ -42,6 +54,6 @@ defmodule Kafkex.Producer do
   end
 
   def extract_partitions(leaders, topic) do
-    leaders |> Map.get(topic) |> Map.size
+    leaders |> Map.get(topic) |> Map.size()
   end
 end

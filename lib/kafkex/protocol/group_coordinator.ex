@@ -15,12 +15,14 @@ defmodule Kafkex.Protocol.GroupCoordinator do
   defmodule Response do
     defstruct broker: []
 
-    def parse({:ok, << correlation_id :: 32, group_error_code :: 16, coordinator :: binary >>}) do
+    def parse({:ok, <<correlation_id::32, group_error_code::16, coordinator::binary>>}) do
       case error_code(group_error_code) do
         :NONE ->
           {broker, <<>>} = Kafkex.Protocol.Broker.build(coordinator)
           {correlation_id, {:ok, %Response{broker: broker}}}
-        error -> {correlation_id, {:error, error}}
+
+        error ->
+          {correlation_id, {:error, error}}
       end
     end
   end
