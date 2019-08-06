@@ -49,11 +49,13 @@ defmodule Kafkex.Producer do
   defp next_partition(_, -1), do: 0
   defp next_partition(num_partitions, last_partition), do: rem(last_partition + 1, num_partitions)
 
-  def extract_partitions(%{}, topic) do
-    {:error, "No partitions found for topic " <> topic}
-  end
-
   def extract_partitions(leaders, topic) do
-    leaders |> Map.get(topic) |> Map.size()
+    num_partitions = (Map.get(leaders, topic) || %{}) |> Map.size
+
+    if num_partitions > 0 do
+      {:ok, num_partitions}
+    else
+      {:error, "No partitions found for topic " <> topic}
+    end
   end
 end
