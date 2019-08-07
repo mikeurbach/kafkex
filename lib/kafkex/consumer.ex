@@ -5,6 +5,7 @@ defmodule Kafkex.Consumer do
 
   @latest_offset -1
   @earliest_offset -2
+  @check_demand_interval 10
   @heartbeat_interval 1000
   @member_assignment_version 0
   @retention_time_ms 604_800_000
@@ -43,7 +44,7 @@ defmodule Kafkex.Consumer do
   end
 
   def handle_info({:check_demand}, state) do
-    send(self(), {:check_demand})
+    :timer.send_after(@check_demand_interval, {:check_demand})
     {:noreply, [], state}
   end
 
