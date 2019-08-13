@@ -12,10 +12,10 @@ defmodule Kafkex.Protocol.Fetch do
     end
 
     def parse(
-          <<partition::32, partition_error_code::16, high_watermark::64-signed, message_size::32,
+          <<partition::32, partition_error_code::16, high_watermark::64-signed, message_set_size::32,
             rest::binary>>
         ) do
-      {messages, new_rest} = Kafkex.Protocol.Message.parse(message_size, rest, [])
+      {messages, new_rest} = Kafkex.Protocol.Message.parse(message_set_size, rest, [])
 
       messages = messages |> Enum.map(fn message -> %{message | partition: partition} end)
 
