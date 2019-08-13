@@ -11,7 +11,7 @@ defmodule Kafkex.Consumer do
   @retention_time_ms 604_800_000
 
   def start_link({seed_brokers, topic, group_id}) do
-    GenStage.start_link(__MODULE__, {seed_brokers, topic, group_id, %{}})
+    start_link({seed_brokers, topic, group_id, %{}})
   end
 
   def start_link({seed_brokers, topic, group_id, options}) do
