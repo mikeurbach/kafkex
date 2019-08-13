@@ -39,11 +39,10 @@ defmodule Kafkex.Protocol.Message do
     {items, rest}
   end
 
-  # offsets are signed so they
   def parse(
     message_set_size,
         bytes_parsed,
-        <<offset::64-signed, size::32, _crc::32, 0::8, _attributes::8, key_size::32, rest::binary>>,
+        <<offset::64-signed, _size::32, _crc::32, 0::8, _attributes::8, key_size::32, rest::binary>>,
         items
   ) when offset >= 0 do
     parse_helper(message_set_size, @base_size_v0, bytes_parsed, offset, key_size, rest, items)
@@ -52,8 +51,8 @@ defmodule Kafkex.Protocol.Message do
   def parse(
     message_set_size,
         bytes_parsed,
-        <<offset::64-signed, size::32, _crc::32, 1::8, _attributes::8, ts::64, key_size::32-signed,
-          rest::binary>> = msg,
+        <<offset::64-signed, _size::32, _crc::32, 1::8, _attributes::8, ts::64, key_size::32-signed,
+          rest::binary>>,
         items
   ) when offset >= 0 do
     parse_helper(message_set_size, @base_size_v1, bytes_parsed, offset, key_size, rest, items, ts)
