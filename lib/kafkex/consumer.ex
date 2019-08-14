@@ -198,11 +198,12 @@ defmodule Kafkex.Consumer do
     should_fill_by_fetch = length(pending_events) == 0
     new_demand = current_demand + pending_demand
 
-    {ready_events, pending_events} = if should_fill_by_fetch do
-      fill_by_fetch(current_demand, pending_demand, new_demand, state)
-    else
-      fill_by_dequeue(current_demand, pending_demand, new_demand, pending_events)
-    end
+    {ready_events, pending_events} =
+      if should_fill_by_fetch do
+        fill_by_fetch(current_demand, pending_demand, new_demand, state)
+      else
+        fill_by_dequeue(current_demand, pending_demand, new_demand, pending_events)
+      end
 
     Logger.debug(
       "[#{__MODULE__}][#{inspect(self())}] retreived #{length(ready_events)} events, with #{
