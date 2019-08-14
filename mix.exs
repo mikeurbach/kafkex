@@ -29,6 +29,11 @@ defmodule Kafkex.Mixfile do
   #
   # Type "mix help deps" for more examples and options
   defp deps do
-    [{:connection, "~> 1.0.4"}, {:flow, "~> 0.11"}, {:gen_stage, "~> 0.11"}]
+    [
+      {:broadway, "~> 0.4"},
+      {:connection, "~> 1.0.4"},
+      {:flow, "~> 0.14"},
+      {:gen_stage, "~> 0.14"}
+    ]
   end
 end

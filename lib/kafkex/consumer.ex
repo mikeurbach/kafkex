@@ -29,7 +29,7 @@ defmodule Kafkex.Consumer do
   def commit(pid, messages) do
     latest_offsets = offsets_from_messages(messages)
 
-    GenStage.call(pid, {:commit, latest_offsets})
+    send(pid, {:commit, latest_offsets})
   end
 
   def init({seed_brokers, topic, group_id, options}) do
@@ -52,6 +52,42 @@ defmodule Kafkex.Consumer do
   def handle_info({:check_demand}, state) do
     :timer.send_after(@check_demand_interval, {:check_demand})
     {:noreply, [], state}
+  end
+
+  # Kafkex.Client.offset_commit(client, group_id, generation_id, member_id, @retention_time_ms, [[topic: topic, partitions: [[partition: 0, offset: 0, metadata: nil]]]])
+  def handle_info(
+        {:commit, latest_offsets},
+        _from,
+        %{
+          client: client,
+          group_id: group_id,
+          generation_id: generation_id,
+          member_id: member_id,
+          offsets: offsets,
+          topic: topic
+        } = state
+      ) do
+    new_offsets =
+      if map_size(latest_offsets) > 0 and latest_offsets != offsets do
+        Kafkex.Client.offset_commit(
+          client,
+          group_id,
+          generation_id,
+          member_id,
+          @retention_time_ms,
+          [build_commit_options(latest_offsets, topic)]
+        )
+
+        Logger.debug(
+          "[#{__MODULE__}][#{inspect(self())}] committed offsets: #{inspect(latest_offsets)}"
+        )
+
+        Map.merge(offsets, latest_offsets)
+      else
+        offsets
+      end
+
+    {:noreply, [], %{state | offsets: new_offsets}}
   end
 
   def handle_info(
@@ -138,6 +174,7 @@ defmodule Kafkex.Consumer do
        generation_id: join_response.generation_id,
        member_assignment: sync_response,
        offsets: offsets,
+       highwater: offsets,
        options: options,
        pending_demand: 0,
        pending_events: []
@@ -178,17 +215,26 @@ defmodule Kafkex.Consumer do
       } pending"
     )
 
-    new_state = if options[:auto_commit] do
-      latest_offsets = offsets_from_messages(ready_events)
-      {:noreply, [], new_state} = handle_call({:commit, latest_offsets}, self(), state)
-      new_state
-    else
-      state
-    end
+    highwater =
+      if length(ready_events) > 0 do
+        offsets_from_messages(ready_events)
+      else
+        state[:highwater]
+      end
+
+    new_state =
+      if options[:auto_commit] do
+        latest_offsets = offsets_from_messages(ready_events)
+        {:noreply, [], new_state} = handle_info({:commit, latest_offsets}, self(), state)
+        new_state
+      else
+        state
+      end
 
     {:noreply, ready_events,
      %{
-       new_state |
+       new_state
+       | highwater: highwater,
          pending_demand: new_demand - length(ready_events),
          pending_events: pending_events
      }}
@@ -218,18 +264,19 @@ defmodule Kafkex.Consumer do
       } pending"
     )
 
-    new_state = if options[:auto_commit] do
-      latest_offsets = offsets_from_messages(ready_events)
-      {:noreply, [], new_state} = handle_call({:commit, latest_offsets}, self(), state)
-      new_state
-    else
-      state
-    end
+    new_state =
+      if options[:auto_commit] do
+        latest_offsets = offsets_from_messages(ready_events)
+        {:noreply, [], new_state} = handle_info({:commit, latest_offsets}, self(), state)
+        new_state
+      else
+        state
+      end
 
     {:noreply, ready_events,
      %{
-       new_state |
-         pending_demand: new_demand - length(ready_events),
+       new_state
+       | pending_demand: new_demand - length(ready_events),
          pending_events: pending_events
      }}
   end
@@ -337,49 +384,22 @@ defmodule Kafkex.Consumer do
     topic_responses
   end
 
-  defp build_fetch_options(%{member_assignment: member_assignment, offsets: offsets, topic: topic}) do
+  defp build_fetch_options(%{
+         member_assignment: member_assignment,
+         highwater: highwater,
+         topic: topic
+       }) do
     member_assignment.partition_assignments
     |> Enum.filter(&(&1.topic == topic))
     |> Enum.map(fn partition_assignment ->
       partitions =
         partition_assignment.partitions
         |> Enum.map(fn partition ->
-          [partition: partition, offset: offsets[partition]]
+          [partition: partition, offset: highwater[partition]]
         end)
 
       [topic: topic, partitions: partitions]
     end)
-  end
-
-  # Kafkex.Client.offset_commit(client, group_id, generation_id, member_id, @retention_time_ms, [[topic: topic, partitions: [[partition: 0, offset: 0, metadata: nil]]]])
-  def handle_call({:commit, latest_offsets}, _from, %{
-         client: client,
-         group_id: group_id,
-         generation_id: generation_id,
-         member_id: member_id,
-         offsets: offsets,
-         topic: topic
-       } = state) do
-    new_offsets = if map_size(latest_offsets) > 0 and latest_offsets != offsets do
-      Kafkex.Client.offset_commit(
-        client,
-        group_id,
-        generation_id,
-        member_id,
-        @retention_time_ms,
-        [build_commit_options(latest_offsets, topic)]
-      )
-
-      Logger.debug(
-        "[#{__MODULE__}][#{inspect(self())}] committed offsets: #{inspect(latest_offsets)}"
-      )
-
-      Map.merge(offsets, latest_offsets)
-    else
-      offsets
-    end
-
-    {:noreply, [], %{state | offsets: new_offsets}}
   end
 
   defp build_commit_options(latest_offsets, topic) do
