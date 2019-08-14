@@ -26,6 +26,12 @@ defmodule Kafkex.Consumer do
     end
   end
 
+  def commit(pid, messages) do
+    latest_offsets = offsets_from_messages(messages)
+
+    GenStage.call(pid, {:commit, latest_offsets})
+  end
+
   def init({seed_brokers, topic, group_id, options}) do
     {:ok, client} = Kafkex.Client.start_link(seed_brokers)
     join_group(client, topic, group_id, "", options)
@@ -151,7 +157,6 @@ defmodule Kafkex.Consumer do
         %{
           pending_demand: pending_demand,
           pending_events: pending_events,
-          offsets: offsets,
           options: options
         } = state
       )
@@ -173,17 +178,17 @@ defmodule Kafkex.Consumer do
       } pending"
     )
 
-    new_offsets =
-      if options[:auto_commit] do
-        commit(ready_events, state)
-      else
-        offsets
-      end
+    new_state = if options[:auto_commit] do
+      latest_offsets = offsets_from_messages(ready_events)
+      {:noreply, [], new_state} = handle_call({:commit, latest_offsets}, self(), state)
+      new_state
+    else
+      state
+    end
 
     {:noreply, ready_events,
      %{
-       state
-       | offsets: new_offsets,
+       new_state |
          pending_demand: new_demand - length(ready_events),
          pending_events: pending_events
      }}
@@ -194,7 +199,6 @@ defmodule Kafkex.Consumer do
         %{
           pending_demand: pending_demand,
           pending_events: pending_events,
-          offsets: offsets,
           options: options
         } = state
       ) do
@@ -214,17 +218,17 @@ defmodule Kafkex.Consumer do
       } pending"
     )
 
-    new_offsets =
-      if options[:auto_commit] do
-        commit(ready_events, state)
-      else
-        offsets
-      end
+    new_state = if options[:auto_commit] do
+      latest_offsets = offsets_from_messages(ready_events)
+      {:noreply, [], new_state} = handle_call({:commit, latest_offsets}, self(), state)
+      new_state
+    else
+      state
+    end
 
     {:noreply, ready_events,
      %{
-       state
-       | offsets: new_offsets,
+       new_state |
          pending_demand: new_demand - length(ready_events),
          pending_events: pending_events
      }}
@@ -348,17 +352,15 @@ defmodule Kafkex.Consumer do
   end
 
   # Kafkex.Client.offset_commit(client, group_id, generation_id, member_id, @retention_time_ms, [[topic: topic, partitions: [[partition: 0, offset: 0, metadata: nil]]]])
-  defp commit(messages, %{
+  def handle_call({:commit, latest_offsets}, _from, %{
          client: client,
          group_id: group_id,
          generation_id: generation_id,
          member_id: member_id,
          offsets: offsets,
          topic: topic
-       }) do
-    latest_offsets = offsets_from_messages(messages)
-
-    if map_size(latest_offsets) > 0 and latest_offsets != offsets do
+       } = state) do
+    new_offsets = if map_size(latest_offsets) > 0 and latest_offsets != offsets do
       Kafkex.Client.offset_commit(
         client,
         group_id,
@@ -376,6 +378,8 @@ defmodule Kafkex.Consumer do
     else
       offsets
     end
+
+    {:noreply, [], %{state | offsets: new_offsets}}
   end
 
   defp build_commit_options(latest_offsets, topic) do

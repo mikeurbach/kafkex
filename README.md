@@ -29,15 +29,17 @@ If [available in Hex](https://hex.pm/docs/publish), the package can be installed
 ```
 iex(1)> {:ok, producer} = Kafkex.Producer.start_link({[{'localhost', 9092}], "foo"})
 {:ok, #PID<0.188.0>}
-iex(2)> Stream.repeatedly(fn() -> {"key", "value"} end) |> Flow.from_enumerable |> Flow.into_stages([producer])
-{:ok, #PID<0.194.0>}
+iex(2)> 0..3 |> Enum.map(&Integer.to_string/1) |> Flow.from_enumerable |> Flow.into_stages([producer])
+nil
 iex(3)> {:ok, consumer} = Kafkex.Consumer.start_link({[{'localhost', 9092}], "foo", "group"})
 {:ok, #PID<0.149.0>}
 iex(4)> Flow.from_stage(consumer) |> Enum.take(3)
+...
 [%Kafkex.Protocol.Message{key: "key", offset: 155227127,
   timestamp: 1513012816377, value: "value"},
  %Kafkex.Protocol.Message{key: "key", offset: 155227128,
   timestamp: 1513012816377, value: "value"},
  %Kafkex.Protocol.Message{key: "key", offset: 155227129,
   timestamp: 1513012816377, value: "value"}]
+...
 ```
