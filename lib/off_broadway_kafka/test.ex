@@ -1,4 +1,4 @@
-defmodule OffBroadway.Kafka.Test do
+defmodule OffBroadwayKafka.Test do
   use Broadway
 
   require Logger
@@ -9,8 +9,8 @@ defmodule OffBroadway.Kafka.Test do
       producers: [
         kafka: [
           module:
-            {Kafkex.Consumer, {[{'localhost', 9092}], "foo", "group", %{auto_commit: false}}},
-          transformer: {OffBroadway.Kafka.Transformer, :transform, [__MODULE__]}
+            {OffBroadwayKafka.Producer,
+             %{seed_brokers: [{'localhost', 9092}], topic: "foo", group_id: "group"}}
         ]
       ],
       processors: [
