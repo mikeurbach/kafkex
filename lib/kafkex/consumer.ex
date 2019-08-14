@@ -66,7 +66,7 @@ defmodule Kafkex.Consumer do
         } = state
       ) do
     new_offsets =
-      if map_size(latest_offsets) > 0 and latest_offsets != offsets do
+      if map_size(latest_offsets) > 0 and offsets_increased(latest_offsets, offsets) do
         Kafkex.Client.offset_commit(
           client,
           group_id,
@@ -407,5 +407,12 @@ defmodule Kafkex.Consumer do
     end)
     |> Enum.filter(fn {_partition, offset} -> offset > 0 end)
     |> Enum.into(%{})
+  end
+
+  defp offsets_increased(current_offsets, previous_offsets) do
+    Map.keys(current_offsets)
+    |> Enum.reduce(false, fn partition, acc ->
+      current_offsets[partition] > (previous_offsets[partition] || 0) or acc
+    end)
   end
 end

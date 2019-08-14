@@ -32,8 +32,9 @@ iex(1)> {:ok, producer} = Kafkex.Producer.start_link({[{'localhost', 9092}], "fo
 iex(2)> 0..3 |> Enum.map(&Integer.to_string/1) |> Flow.from_enumerable |> Flow.into_stages([producer])
 nil
 iex(3)> {:ok, consumer} = Kafkex.Consumer.start_link({[{'localhost', 9092}], "foo", "group"})
+...
 {:ok, #PID<0.149.0>}
-iex(4)> Flow.from_stage(consumer) |> Enum.take(3)
+iex(4)> Flow.from_stages([consumer]) |> Enum.take(3)
 ...
 [%Kafkex.Protocol.Message{key: "key", offset: 155227127,
   timestamp: 1513012816377, value: "value"},
