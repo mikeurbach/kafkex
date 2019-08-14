@@ -54,10 +54,8 @@ defmodule Kafkex.Consumer do
     {:noreply, [], state}
   end
 
-  # Kafkex.Client.offset_commit(client, group_id, generation_id, member_id, @retention_time_ms, [[topic: topic, partitions: [[partition: 0, offset: 0, metadata: nil]]]])
   def handle_info(
         {:commit, latest_offsets},
-        _from,
         %{
           client: client,
           group_id: group_id,
@@ -196,89 +194,64 @@ defmodule Kafkex.Consumer do
           pending_events: pending_events,
           options: options
         } = state
-      )
-      when length(pending_events) == 0 do
-    Logger.debug(
-      "[#{__MODULE__}][#{inspect(self())}] attempting to fill demand by fetching, current: #{
-        current_demand
-      }, pending: #{pending_demand}"
-    )
-
+      ) do
+    should_fill_by_fetch = length(pending_events) == 0
     new_demand = current_demand + pending_demand
-    topic_responses = fetch(new_demand, state)
 
-    {ready_events, pending_events} = events_from_response(new_demand, topic_responses)
+    {ready_events, pending_events} = if should_fill_by_fetch do
+      fill_by_fetch(current_demand, pending_demand, new_demand, state)
+    else
+      fill_by_dequeue(current_demand, pending_demand, new_demand, pending_events)
+    end
 
     Logger.debug(
-      "[#{__MODULE__}][#{inspect(self())}] fetched #{length(ready_events)} events, with #{
+      "[#{__MODULE__}][#{inspect(self())}] retreived #{length(ready_events)} events, with #{
         length(pending_events)
       } pending"
     )
 
+    latest_offsets = offsets_from_messages(ready_events)
+
     highwater =
-      if length(ready_events) > 0 do
-        offsets_from_messages(ready_events)
+      if should_fill_by_fetch and length(ready_events) > 0 do
+        latest_offsets
       else
         state[:highwater]
       end
 
-    new_state =
-      if options[:auto_commit] do
-        latest_offsets = offsets_from_messages(ready_events)
-        {:noreply, [], new_state} = handle_info({:commit, latest_offsets}, self(), state)
-        new_state
-      else
-        state
-      end
+    if options[:auto_commit] do
+      commit(self(), ready_events)
+    end
 
     {:noreply, ready_events,
      %{
-       new_state
+       state
        | highwater: highwater,
          pending_demand: new_demand - length(ready_events),
          pending_events: pending_events
      }}
   end
 
-  def fill_demand(
-        current_demand,
-        %{
-          pending_demand: pending_demand,
-          pending_events: pending_events,
-          options: options
-        } = state
-      ) do
+  defp fill_by_fetch(current_demand, pending_demand, new_demand, state) do
+    Logger.debug(
+      "[#{__MODULE__}][#{inspect(self())}] attempting to fill demand by fetching, current: #{
+        current_demand
+      }, pending: #{pending_demand}"
+    )
+
+    topic_responses = fetch(new_demand, state)
+
+    events_from_response(new_demand, topic_responses)
+  end
+
+  defp fill_by_dequeue(current_demand, pending_demand, new_demand, pending_events) do
     Logger.debug(
       "[#{__MODULE__}][#{inspect(self())}] attempting to fill demand by dequeueing, current:: #{
         current_demand
       }, pending: #{pending_demand}"
     )
 
-    new_demand = current_demand + pending_demand
-
-    {ready_events, pending_events} = dequeue_pending_events(new_demand, pending_events)
-
-    Logger.debug(
-      "[#{__MODULE__}][#{inspect(self())}] dequeued #{length(ready_events)} events, with #{
-        length(pending_events)
-      } pending"
-    )
-
-    new_state =
-      if options[:auto_commit] do
-        latest_offsets = offsets_from_messages(ready_events)
-        {:noreply, [], new_state} = handle_info({:commit, latest_offsets}, self(), state)
-        new_state
-      else
-        state
-      end
-
-    {:noreply, ready_events,
-     %{
-       new_state
-       | pending_demand: new_demand - length(ready_events),
-         pending_events: pending_events
-     }}
+    dequeue_pending_events(new_demand, pending_events)
   end
 
   defp assemble_group_assignment(client, topic, %Kafkex.Protocol.JoinGroup.Response{
@@ -368,7 +341,6 @@ defmodule Kafkex.Consumer do
   defp dequeue_pending_events(demand, [event | rest], events),
     do: dequeue_pending_events(demand - 1, rest, [event | events])
 
-  # Kafkex.Client.fetch(client, [[topic: topic, partitions: [[partition: 0, offset: 1]]]])
   defp fetch(_demand, %{client: client} = state) do
     topic_partitions = build_fetch_options(state)
 
